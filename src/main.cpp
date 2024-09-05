@@ -176,9 +176,9 @@ static void main_task(void *arg) {
             ctrl_manager.set_emergency_stop(true);
         }
         sys_manager.update_encoder_button(sys_manager.check_force_stop());
+
         act_encoder_button_flag_pressed =
             sys_manager.check_encoder_button_flag();
-
         if (act_encoder_button_flag_pressed &&
             !prev_encoder_button_flag_pressed) {
             if (!encoder_button_flag_pressed_just_before) {
@@ -189,8 +189,6 @@ static void main_task(void *arg) {
                 encoder_button_flag_pressed_just_before = false;
                 first_pressed_time = 0;
             }
-        } else {
-            encoder_button_flag_pressed_just_before = false;
         }
         prev_encoder_button_flag_pressed = act_encoder_button_flag_pressed;
 
