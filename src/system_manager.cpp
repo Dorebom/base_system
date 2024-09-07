@@ -163,8 +163,6 @@ void SystemManager::cmd_executor() {
         cmd = node_cmd_->cmd_stack_.pop();
 
         system_state_->act_cmd_type = cmd.cmd_code.cmd_type;
-        M5_LOGI("Cmd Source: %d", cmd.cmd_code.source);
-        M5_LOGI("Act Cmd: %d", system_state_->act_cmd_type);
 
         is_connected_udp = true;
 
@@ -221,6 +219,45 @@ void SystemManager::cmd_executor() {
             case basic_m5stack_cmd_list::RESET_ALERT:
                 system_state_->is_occured_warning_ = false;
                 break;
+            case basic_m5stack_cmd_list::CHANGE_CONTROLLED_SRV_ID:
+                if (system_state_data.state_code.state_machine !=
+                    node_state_machine::READY) {
+                    break;
+                }
+                ctrl_cmd_->cmd_stack_.push(cmd);
+                break;
+            case basic_m5stack_cmd_list::CHANGE_SRV_POWER:
+                if (system_state_data.state_code.state_machine !=
+                    node_state_machine::STABLE) {
+                    break;
+                }
+                ctrl_cmd_->cmd_stack_.push(cmd);
+                break;
+            case basic_m5stack_cmd_list::CHANGE_SRV_CTRLMODE:
+                if (system_state_data.state_code.state_machine ==
+                    node_state_machine::FORCE_STOP) {
+                    break;
+                }
+                ctrl_cmd_->cmd_stack_.push(cmd);
+                break;
+            case basic_m5stack_cmd_list::SERVO_POSITION_CONTROL:
+                if (!control_state_->is_power_on) {
+                    break;
+                }
+                ctrl_cmd_->cmd_stack_.push(cmd);
+                break;
+            case basic_m5stack_cmd_list::SERVO_VELOCITY_CONTROL:
+                if (!control_state_->is_power_on) {
+                    break;
+                }
+                ctrl_cmd_->cmd_stack_.push(cmd);
+                break;
+            case basic_m5stack_cmd_list::SERVO_TORQUE_CONTROL:
+                if (!control_state_->is_power_on) {
+                    break;
+                }
+                ctrl_cmd_->cmd_stack_.push(cmd);
+                break;
             default:
                 is_connected_udp = false;
                 break;
@@ -234,6 +271,382 @@ bool SystemManager::check_force_stop() {
         return false;
     }
     return true;
+}
+
+node_state_machine SystemManager::check_state_machine() {
+    return system_state_data.state_code.state_machine;
+}
+
+void SystemManager::set_cmd_change_state_machine(
+    node_state_machine state_machine) {
+    st_node_cmd cmd;
+
+    // すでに同じ状態になっている場合は、何もしない
+    if (state_machine == system_state_data.state_code.state_machine) {
+        return;
+    }
+    //
+    switch (state_machine) {
+        case node_state_machine::READY:
+            cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::CHANGE_SM_READY;
+            break;
+        case node_state_machine::STABLE:
+            cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::CHANGE_SM_STABLE;
+            break;
+        case node_state_machine::FORCE_STOP:
+            cmd.cmd_code.cmd_type =
+                basic_m5stack_cmd_list::CHANGE_SM_FORCE_STOP;
+            break;
+        default:
+            break;
+    }
+    cmd.cmd_code.data_size = 0;
+    cmd.cmd_code.cmd_id = 0;
+    cmd.cmd_code.is_sys_cmd = false;
+    cmd.cmd_code.is_used_msgpack = false;
+    cmd.cmd_code.priority = 0;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::set_cmd_change_servo_id(uint8_t servo_id) {
+    st_node_cmd cmd;
+
+    if (system_state_data.state_code.state_machine !=
+        node_state_machine::READY) {
+        return;
+    }
+
+    cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::CHANGE_CONTROLLED_SRV_ID;
+    cmd_change_controlled_servo_id* cmd_data =
+        (cmd_change_controlled_servo_id*)cmd.data;
+    cmd_data->servo_id = servo_id;
+
+    cmd.cmd_code.data_size = sizeof(cmd_change_controlled_servo_id);
+    cmd.cmd_code.cmd_id = 0;
+    cmd.cmd_code.is_sys_cmd = false;
+    cmd.cmd_code.is_used_msgpack = false;
+    cmd.cmd_code.priority = 0;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::set_cmd_change_servo_power(uint8_t servo_id,
+                                               bool is_power_on) {
+    st_node_cmd cmd;
+
+    if (system_state_data.state_code.state_machine !=
+        node_state_machine::STABLE) {
+        return;
+    }
+
+    cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::CHANGE_SRV_POWER;
+    cmd_change_servo_power* cmd_data = (cmd_change_servo_power*)cmd.data;
+    cmd_data->servo_id = servo_id;
+    cmd_data->is_on = is_power_on;
+
+    cmd.cmd_code.data_size = sizeof(cmd_change_servo_power);
+    cmd.cmd_code.cmd_id = 0;
+    cmd.cmd_code.is_sys_cmd = false;
+    cmd.cmd_code.is_used_msgpack = false;
+    cmd.cmd_code.priority = 0;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::set_cmd_change_servo_ctrl_mode(
+    uint8_t servo_id, basic_servo_ctrl_cmd_list ctrl_mode) {
+    st_node_cmd cmd;
+
+    if (system_state_data.state_code.state_machine ==
+        node_state_machine::FORCE_STOP) {
+        return;
+    }
+
+    cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::CHANGE_SRV_CTRLMODE;
+    cmd_change_servo_ctrl_mode* cmd_data =
+        (cmd_change_servo_ctrl_mode*)cmd.data;
+    cmd_data->servo_id = servo_id;
+    cmd_data->ctrl_mode = ctrl_mode;
+
+    cmd.cmd_code.data_size = sizeof(cmd_change_servo_ctrl_mode);
+    cmd.cmd_code.cmd_id = 0;
+    cmd.cmd_code.is_sys_cmd = false;
+    cmd.cmd_code.is_used_msgpack = false;
+    cmd.cmd_code.priority = 0;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::set_cmd_velocity_control(uint8_t servo_id,
+                                             double velocity) {
+    st_node_cmd cmd;
+
+    if (!control_state_->is_power_on) {
+        return;
+    }
+
+    cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::SERVO_VELOCITY_CONTROL;
+    cmd_velocity_control* cmd_data = (cmd_velocity_control*)cmd.data;
+    cmd_data->servo_id = servo_id;
+    cmd_data->velocity = velocity;
+
+    cmd.cmd_code.data_size = sizeof(cmd_velocity_control);
+    cmd.cmd_code.cmd_id = 0;
+    cmd.cmd_code.is_sys_cmd = false;
+    cmd.cmd_code.is_used_msgpack = false;
+    cmd.cmd_code.priority = 0;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::set_cmd_torque_control(uint8_t servo_id, double torque) {
+    st_node_cmd cmd;
+
+    if (!control_state_->is_power_on) {
+        return;
+    }
+
+    cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::SERVO_TORQUE_CONTROL;
+    cmd_torque_control* cmd_data = (cmd_torque_control*)cmd.data;
+    cmd_data->servo_id = servo_id;
+    cmd_data->torque = torque;
+
+    cmd.cmd_code.data_size = sizeof(cmd_torque_control);
+    cmd.cmd_code.cmd_id = 0;
+    cmd.cmd_code.is_sys_cmd = false;
+    cmd.cmd_code.is_used_msgpack = false;
+    cmd.cmd_code.priority = 0;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::set_cmd_position_control(uint8_t servo_id,
+                                             double target_position) {
+    st_node_cmd cmd;
+
+    if (!control_state_->is_power_on) {
+        return;
+    }
+
+    cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::SERVO_POSITION_CONTROL;
+    cmd_position_control* cmd_data = (cmd_position_control*)cmd.data;
+    cmd_data->servo_id = servo_id;
+    cmd_data->target_position = target_position;
+
+    cmd.cmd_code.data_size = sizeof(cmd_position_control);
+    cmd.cmd_code.cmd_id = 0;
+    cmd.cmd_code.is_sys_cmd = false;
+    cmd.cmd_code.is_used_msgpack = false;
+    cmd.cmd_code.priority = 0;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::update_manual_operating() {
+    int diff = 0;
+    // >> ダブルクリックされたら、モードを変更
+    if (manual_operating_state_.act_encoder_button_flag_double_pressed) {
+        manual_operating_state_.encoder_offest =
+            manual_operating_state_.act_encoder_value;
+        switch (manual_operating_state_.mode) {
+            case manual_operating_mode::NONE:
+                manual_operating_state_.mode = manual_operating_mode::CHANGE_SM;
+                break;
+            case manual_operating_mode::CHANGE_SM:
+                manual_operating_state_.mode =
+                    manual_operating_mode::CHANGE_SERVO_ID;
+                break;
+            case manual_operating_mode::CHANGE_SERVO_ID:
+                manual_operating_state_.mode =
+                    manual_operating_mode::CHANGE_SERVO_POWER;
+                break;
+            case manual_operating_mode::CHANGE_SERVO_POWER:
+                manual_operating_state_.mode =
+                    manual_operating_mode::CHANGE_SERVO_CONTROL_MODE;
+                break;
+            case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
+                manual_operating_state_.mode =
+                    manual_operating_mode::CMD_SERVO_CONTROL;
+                break;
+            case manual_operating_mode::CMD_SERVO_CONTROL:
+                manual_operating_state_.mode = manual_operating_mode::NONE;
+                break;
+            default:
+                break;
+        }
+    } else {
+        // command stackに命令を追加
+        switch (manual_operating_state_.mode) {
+            case manual_operating_mode::CHANGE_SM:
+                if (manual_operating_state_.act_encoder_value >
+                    manual_operating_state_.encoder_offest + 1) {
+                    // command stackに命令を追加
+                    set_cmd_change_state_machine(node_state_machine::STABLE);
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                } else if (manual_operating_state_.act_encoder_value <
+                           manual_operating_state_.encoder_offest - 1) {
+                    // command stackに命令を追加
+                    set_cmd_change_state_machine(node_state_machine::READY);
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                }
+                break;
+            case manual_operating_mode::CHANGE_SERVO_ID:
+                if (manual_operating_state_.act_encoder_value >
+                    manual_operating_state_.encoder_offest + 1) {
+                    if (control_state_->servo_id < 100)
+                        set_cmd_change_servo_id(control_state_->servo_id + 1);
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                } else if (manual_operating_state_.act_encoder_value <
+                           manual_operating_state_.encoder_offest - 1) {
+                    if (control_state_->servo_id > 0)
+                        set_cmd_change_servo_id(control_state_->servo_id - 1);
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                }
+                break;
+            case manual_operating_mode::CHANGE_SERVO_POWER:
+                if (manual_operating_state_.act_encoder_value >
+                    manual_operating_state_.encoder_offest + 1) {
+                    set_cmd_change_servo_power(control_state_->servo_id, true);
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                } else if (manual_operating_state_.act_encoder_value <
+                           manual_operating_state_.encoder_offest - 1) {
+                    set_cmd_change_servo_power(control_state_->servo_id, false);
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                }
+                break;
+            case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
+                if (manual_operating_state_.act_encoder_value >
+                    manual_operating_state_.encoder_offest + 1) {
+                    switch (control_state_->ctrl_mode) {
+                        case basic_servo_ctrl_cmd_list::TORQUE:
+                            set_cmd_change_servo_ctrl_mode(
+                                control_state_->servo_id,
+                                basic_servo_ctrl_cmd_list::VELOCITY);
+                            break;
+                        case basic_servo_ctrl_cmd_list::VELOCITY:
+                            set_cmd_change_servo_ctrl_mode(
+                                control_state_->servo_id,
+                                basic_servo_ctrl_cmd_list::POSITION);
+                            break;
+                        case basic_servo_ctrl_cmd_list::POSITION:
+                            set_cmd_change_servo_ctrl_mode(
+                                control_state_->servo_id,
+                                basic_servo_ctrl_cmd_list::STAY);
+                            break;
+                        case basic_servo_ctrl_cmd_list::STAY:
+                            break;
+                        default:
+                            break;
+                    }
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                } else if (manual_operating_state_.act_encoder_value <
+                           manual_operating_state_.encoder_offest - 1) {
+                    switch (control_state_->ctrl_mode) {
+                        case basic_servo_ctrl_cmd_list::STAY:
+                            set_cmd_change_servo_ctrl_mode(
+                                control_state_->servo_id,
+                                basic_servo_ctrl_cmd_list::POSITION);
+                            break;
+                        case basic_servo_ctrl_cmd_list::POSITION:
+                            set_cmd_change_servo_ctrl_mode(
+                                control_state_->servo_id,
+                                basic_servo_ctrl_cmd_list::VELOCITY);
+                            break;
+                        case basic_servo_ctrl_cmd_list::VELOCITY:
+                            set_cmd_change_servo_ctrl_mode(
+                                control_state_->servo_id,
+                                basic_servo_ctrl_cmd_list::TORQUE);
+                            break;
+                        case basic_servo_ctrl_cmd_list::TORQUE:
+                            break;
+                        default:
+                            break;
+                    }
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                }
+                break;
+            case manual_operating_mode::CMD_SERVO_CONTROL:
+                diff = manual_operating_state_.act_encoder_value -
+                       manual_operating_state_.encoder_offest;
+                switch (control_state_->ctrl_mode) {
+                    case basic_servo_ctrl_cmd_list::STAY:
+                        break;
+                    case basic_servo_ctrl_cmd_list::POSITION:
+                        // 偏差
+                        if (std::abs(diff) > 1) {
+                            if (std::abs(diff) > 50) {
+                                if (diff > 0) {
+                                    diff = 50;
+                                } else {
+                                    diff = -50;
+                                }
+                            }
+                            if (control_state_->is_power_on) {
+                                set_cmd_position_control(
+                                    control_state_->servo_id,
+                                    control_state_->act_joint_position +
+                                        0.005 * diff);
+                            }
+                            manual_operating_state_.encoder_offest =
+                                manual_operating_state_.act_encoder_value;
+                        }
+                        break;
+                    case basic_servo_ctrl_cmd_list::VELOCITY:
+                        // 偏差
+                        if (std::abs(diff) > 1) {
+                            if (std::abs(diff) > 50) {
+                                if (diff > 0) {
+                                    diff = 50;
+                                } else {
+                                    diff = -50;
+                                }
+                            }
+                            if (control_state_->is_power_on) {
+                                set_cmd_velocity_control(
+                                    control_state_->servo_id,
+                                    control_state_->cmd_joint_velocity +
+                                        0.02 * diff);
+                            }
+                            manual_operating_state_.encoder_offest =
+                                manual_operating_state_.act_encoder_value;
+                        }
+                        break;
+                    case basic_servo_ctrl_cmd_list::TORQUE:
+                        // 偏差
+                        if (std::abs(diff) > 1) {
+                            if (std::abs(diff) > 50) {
+                                if (diff > 0) {
+                                    diff = 50;
+                                } else {
+                                    diff = -50;
+                                }
+                            }
+                            if (control_state_->is_power_on) {
+                                set_cmd_torque_control(
+                                    control_state_->servo_id,
+                                    control_state_->cmd_joint_torque +
+                                        0.02 * diff);
+                            }
+                            manual_operating_state_.encoder_offest =
+                                manual_operating_state_.act_encoder_value;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            default:
+                break;
+        }
+    }
 }
 
 void SystemManager::set_canvas(M5Canvas* canvas_) {
@@ -250,11 +663,19 @@ void SystemManager::updateDisplay() {
     canvas->clear();
     canvas->setCursor(0, 0);
 
-    if (system_state_data.state_code.state_machine ==
-        node_state_machine::FORCE_STOP) {
-        canvas->setPaletteColor(1, RED);
-    } else {
-        canvas->setPaletteColor(1, GREEN);
+    switch (system_state_data.state_code.state_machine) {
+        case node_state_machine::FORCE_STOP:
+            canvas->setPaletteColor(1, RED);
+            break;
+        case node_state_machine::READY:
+            canvas->setPaletteColor(1, WHITE);
+            break;
+        case node_state_machine::STABLE:
+            canvas->setPaletteColor(1, GREEN);
+            break;
+        default:
+            canvas->setPaletteColor(1, WHITE);
+            break;
     }
 
     // Rewrite the canvas
@@ -287,6 +708,7 @@ void SystemManager::updateDisplay() {
         default:
             break;
     }
+
     if (system_state_->emergency_stop_switch_for_control_task) {
         canvas->printf("EMS:ON\r\n");
     } else {
@@ -305,24 +727,95 @@ void SystemManager::updateDisplay() {
                    system_state_->ave_calc_time_of_main_task,
                    system_state_->max_calc_time_of_main_task);
 
+    // Manual Operating
+    if (manual_operating_state_.mode == manual_operating_mode::NONE) {
+        canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+        canvas->printf("Manual Operating\r\n");
+        canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+    } else {
+        canvas->setTextSize(TITLE_FONT_SIZE);
+        canvas->printf("Manual Operating\r\n");
+        canvas->setTextSize(TEXT_FONT_SIZE);
+    }
+    switch (manual_operating_state_.mode) {
+        case manual_operating_mode::NONE:
+            canvas->printf("Mode: NONE\r\n");
+            break;
+        case manual_operating_mode::CHANGE_SM:
+            canvas->printf("Mode: CHANGE_SM\r\n");
+            break;
+        case manual_operating_mode::CHANGE_SERVO_ID:
+            canvas->printf("Mode: CHANGE_SRV_ID\r\n");
+            break;
+        case manual_operating_mode::CHANGE_SERVO_POWER:
+            canvas->printf("Mode: CHANGE_SRV_POWER\r\n");
+            break;
+        case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
+            canvas->printf("Mode: CHANGE_SRV_CTRLMODE\r\n");
+            break;
+        case manual_operating_mode::CMD_SERVO_CONTROL:
+            canvas->printf("Mode: CMD_SRV_CONTROL\r\n");
+            break;
+        default:
+            break;
+    }
+    // << END Manual Operating
+    canvas->setTextSize(TEXT_FONT_SIZE);
+    canvas->printf("Recent Recv Cmd: %d \r\n", system_state_->act_cmd_type);
+
+    // 1.3 Control Status
+    canvas->setTextSize(TITLE_FONT_SIZE);
     canvas->printf("Control Status\r\n");
+    canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
     canvas->printf("Ave: %d ms\t Max: %d ms\r\n",
                    system_state_->ave_calc_time_of_ctrl_task,
                    system_state_->max_calc_time_of_ctrl_task);
-    canvas->printf("UDP Send Status\r\n");
-    canvas->printf("Ave: %d ms\t Max: %d ms\r\n",
-                   system_state_->ave_calc_time_of_udp_send_task,
-                   system_state_->max_calc_time_of_udp_send_task);
-    canvas->printf("Recent Recv Cmd: %d \r\n", system_state_->act_cmd_type);
-    // 1.3 Control Status
+
     if (is_init_ctrl_task) {
         if (control_state_->is_init_scale) {
-            canvas->setTextSize(TEXT_FONT_SIZE);
+            canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
             canvas->printf("Weight: %f\r\n", control_state_->sensor_weight);
             canvas->printf("Raw ADC: %d\r\n",
                            control_state_->sensor_weight_raw_adc);
         }
+
+        canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+        canvas->printf("SRV ID %d\r\n", control_state_->servo_id);
+        if (control_state_->is_power_on) {
+            canvas->printf("SRV Power ON\r\n");
+        } else {
+            canvas->printf("SRV Power OFF\r\n");
+        }
+        switch (control_state_->ctrl_mode) {
+            case basic_servo_ctrl_cmd_list::TORQUE:
+                canvas->printf("SRV Ctrl Mode: TORQUE\r\n");
+                break;
+            case basic_servo_ctrl_cmd_list::VELOCITY:
+                canvas->printf("SRV Ctrl Mode: VELOCITY\r\n");
+                break;
+            case basic_servo_ctrl_cmd_list::POSITION:
+                canvas->printf("SRV Ctrl Mode: POSITION\r\n");
+                break;
+            case basic_servo_ctrl_cmd_list::STAY:
+                canvas->printf("SRV Ctrl Mode: STAY\r\n");
+                break;
+            default:
+                break;
+        }
+        if (control_state_->is_init_joint_pos) {
+            canvas->printf("Joint Pos: %.3f \t Vel: %.2f \t Trq: %.3f \r\n",
+                           control_state_->act_joint_position,
+                           control_state_->act_joint_velocity,
+                           control_state_->act_joint_torque);
+            canvas->printf("Cmd Pos: %.3f \t Vel: %.2f \t Trq: %.3f \r\n",
+                           control_state_->cmd_joint_position,
+                           control_state_->cmd_joint_velocity,
+                           control_state_->cmd_joint_torque);
+        }
     }
+
+    // << END Control Status
+
     if (is_init_lan) {
         canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
         canvas->printf("LAN Status\r\n");
@@ -353,6 +846,10 @@ void SystemManager::set_control_state(ControlState& state) {
     control_state_->deepcopy(state);
     // Note:
     // ディスプレイ表示やUDP通信への影響は、状態マシンをReady状態にするかどうかで防ぐ。
+}
+
+void SystemManager::set_control_cmd(std::shared_ptr<node_cmd> cmd) {
+    ctrl_cmd_ = cmd;
 }
 
 void SystemManager::set_initialized_lan() {
@@ -441,6 +938,12 @@ void SystemManager::update_encoder_button() {
 }
 
 void SystemManager::update_encoder_button(bool force_stop_status) {
+    if (manual_operating_state_.act_encoder_button_flag_double_pressed) {
+        manual_operating_state_.act_encoder_button_flag_double_pressed = false;
+        manual_operating_state_.encoder_button_flag_pressed_just_before = false;
+        manual_operating_state_.first_pressed_time = 0;
+    }
+
     system_state_->encoder_button_value = encoder_button.getEncoderValue();
     // 押してない状態がtrueのため、flagを反転して取得
     system_state_->encoder_button_flag = !encoder_button.getButtonStatus();
@@ -454,6 +957,37 @@ void SystemManager::update_encoder_button(bool force_stop_status) {
     } else {
         encoder_button.setLEDColor(2, 0x000000);
     }
+
+    manual_operating_state_.act_encoder_button_flag_pressed =
+        system_state_->encoder_button_flag;
+    manual_operating_state_.act_encoder_value =
+        system_state_->encoder_button_value;
+
+    // check double click of encoder button
+    // >> ボタンが押された立ち上がりを検知
+    if (manual_operating_state_.act_encoder_button_flag_pressed &&
+        !manual_operating_state_.prev_encoder_button_flag_pressed) {
+        // 少し前に押されたか確認し、押されてなかったら、初回押下時間を記録
+        if (!manual_operating_state_.encoder_button_flag_pressed_just_before) {
+            manual_operating_state_.first_pressed_time = millis();
+            manual_operating_state_.encoder_button_flag_pressed_just_before =
+                true;
+        } else {
+            // 一定時間経過したら、初回押下時間をリセット
+            if (millis() - manual_operating_state_.first_pressed_time > 1000) {
+                manual_operating_state_
+                    .encoder_button_flag_pressed_just_before = false;
+                manual_operating_state_.first_pressed_time = 0;
+            } else {
+                manual_operating_state_.act_encoder_button_flag_double_pressed =
+                    true;
+            }
+        }
+    }
+
+    // 終了処理
+    manual_operating_state_.prev_encoder_button_flag_pressed =
+        manual_operating_state_.act_encoder_button_flag_pressed;
 }
 
 bool SystemManager::check_encoder_button_flag() {

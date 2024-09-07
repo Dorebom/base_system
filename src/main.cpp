@@ -57,8 +57,8 @@ BoardType board_type = BoardType::M5STACK_CORES3;
 // LAN Module CS    13
 // LAN Module INT   14 [NOTE] デフォルトだと10でADC使いたいかもしれんから変える
 // Display RST      15
-// PC_TX            17
-// PC_RX            18
+#define TX_TWAI_NUM 17  // CAN TX pin
+#define RX_TWAI_NUM 18  // CAN RX pin
 // LAN Module MISO  35
 // LAN Module SCK   36
 // LAN Module MOSI  37
@@ -146,11 +146,9 @@ static void main_task(void *arg) {
     Wire.begin(M5DEV.Ex_I2C.getSDA(), M5DEV.Ex_I2C.getSCL(), 400000UL);
     M5DEV_LOGI("SDA: %d, SCL: %d", M5DEV.Ex_I2C.getSDA(),
                M5DEV.Ex_I2C.getSCL());
-    // >> 1.8. Initialize Encoder Button
-    bool act_encoder_button_flag_pressed = false;
-    bool prev_encoder_button_flag_pressed = false;
-    bool encoder_button_flag_pressed_just_before = false;
-    unsigned long first_pressed_time = 0;
+
+    // >> 1.8. Control Manager
+    sys_manager.set_control_cmd(ctrl_manager.get_cmd_ptr());
 
     sys_manager.set_initialized_main_task();
     // << END Initialize
@@ -177,20 +175,7 @@ static void main_task(void *arg) {
         }
         sys_manager.update_encoder_button(sys_manager.check_force_stop());
 
-        act_encoder_button_flag_pressed =
-            sys_manager.check_encoder_button_flag();
-        if (act_encoder_button_flag_pressed &&
-            !prev_encoder_button_flag_pressed) {
-            if (!encoder_button_flag_pressed_just_before) {
-                first_pressed_time = millis();
-                encoder_button_flag_pressed_just_before = true;
-            }
-            if (millis() - first_pressed_time > 1000) {
-                encoder_button_flag_pressed_just_before = false;
-                first_pressed_time = 0;
-            }
-        }
-        prev_encoder_button_flag_pressed = act_encoder_button_flag_pressed;
+        sys_manager.update_manual_operating();
 
         sys_manager.cmd_executor();
 
@@ -267,6 +252,8 @@ static void ctrl_task(void *arg) {
 
     ControlState state;
 
+    ctrl_manager.init_servo_dummy();
+
     sys_manager.set_initialized_ctrl_task();
 
     while (1) {
@@ -279,6 +266,11 @@ static void ctrl_task(void *arg) {
             weight = ctrl_manager.get_weight();
             raw_adc = ctrl_manager.get_weightRawADC();
         }
+        ctrl_manager.set_state_machine(sys_manager.check_state_machine());
+
+        ctrl_manager.cmd_executor();
+
+        ctrl_manager.update();
 
         // M5DEV_LOGI("CTRL TASK LOOP");
         //  6. Set Control State
@@ -432,6 +424,11 @@ void setup(void) {
         M5DEV_LOGI("UDP initialized");
     }
     // <--END 5. Initialize LAN(UDP)
+
+    // 6. Initialize the CAN
+    ctrl_manager.init_twai(TX_TWAI_NUM, RX_TWAI_NUM);
+    ctrl_manager.init_motor_driver();
+    //    <--END Initialize the CAN
 
     // 7. Initialize THREAD
     // Make thread for receiving UDP packet

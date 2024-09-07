@@ -22,6 +22,14 @@ enum class basic_m5stack_cmd_list : int
 
     RESET_ERROR,
     RESET_ALERT,
+    // 以下、サーボ制御コマンド
+    CHANGE_CONTROLLED_SRV_ID,
+    CHANGE_SRV_POWER,  // ひとつだけサーボON/OFF
+    CHANGE_SRV_CTRLMODE,
+
+    SERVO_POSITION_CONTROL,
+    SERVO_VELOCITY_CONTROL,
+    SERVO_TORQUE_CONTROL,
 
     PERIOD_CMD  // この行は削除しないこと
 };
@@ -72,5 +80,83 @@ public:
     node_cmd(size_t stack_size) : cmd_stack_(stack_size) {
     }
     ~node_cmd() {
+    }
+};
+
+struct cmd_change_controlled_servo_id
+{
+    /* data */
+    uint8_t servo_id;
+
+    cmd_change_controlled_servo_id(/* args */) {
+        servo_id = 0;
+    }
+};
+
+struct cmd_change_servo_power
+{
+    /* data */
+    uint8_t servo_id;
+    bool is_on;
+
+    cmd_change_servo_power(/* args */) {
+        servo_id = 0;
+        is_on = false;
+    }
+};
+
+enum class basic_servo_ctrl_cmd_list : int
+{
+    STAY,
+    POSITION,
+    VELOCITY,
+    TORQUE
+};
+
+struct cmd_change_servo_ctrl_mode
+{
+    /* data */
+    uint8_t servo_id;
+    basic_servo_ctrl_cmd_list ctrl_mode;
+
+    cmd_change_servo_ctrl_mode(/* args */) {
+        servo_id = 0;
+        ctrl_mode = basic_servo_ctrl_cmd_list::STAY;
+    }
+};
+
+struct cmd_position_control
+{
+    /* data */
+    uint8_t servo_id;
+    float target_position;
+
+    cmd_position_control(/* args */) {
+        servo_id = 0;
+        target_position = 0.0;
+    }
+};
+
+struct cmd_velocity_control
+{
+    /* data */
+    uint8_t servo_id;
+    float velocity;
+
+    cmd_velocity_control(/* args */) {
+        servo_id = 0;
+        velocity = 0.0;
+    }
+};
+
+struct cmd_torque_control
+{
+    /* data */
+    uint8_t servo_id;
+    float torque;
+
+    cmd_torque_control(/* args */) {
+        servo_id = 0;
+        torque = 0.0;
     }
 };

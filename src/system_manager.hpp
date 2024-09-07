@@ -1,8 +1,24 @@
 #pragma once
 
+/*
+ *
+ * 機能説明
+ * - 内部状態を表示する機能
+ *   - VALUE
+ *     - bool is_init_canvas
+ *   - FUNC
+ *     - void set_canvas(M5Canvas* canvas_);
+       - void updateDisplay();
+ *
+ *
+ *  TODO: 説明を追加する
+ *
+ */
+
 #include <M5GFX.h>
 
 #include <cstdint>
+#include <memory>
 
 #include "Common/node_cmd.hpp"
 #include "Common/node_state.hpp"
@@ -13,6 +29,8 @@
 #include "Common/st_udp_frame.hpp"
 //
 #include "Sensor/unit_encoder.h"
+//
+#include "DataStruct/st_manual_operating.hpp"
 
 #define TITLE_FONT_SIZE      2
 #define TEXT_FONT_SIZE       1.5
@@ -49,7 +67,10 @@ private:
     // node_state node_state_;
     //  >> Stack
     std::shared_ptr<node_cmd> node_cmd_;
+    std::shared_ptr<node_cmd> ctrl_cmd_;
     // << Stack
+
+    // for udp
     udp_frame udp_send_packet_;        // TODO node class への移植
     int recent_stack_marker_size = 0;  // TODO node class への移植
     uint8_t unsent_data[MAX_STACK_SIZE_AT_ONCE];  // TODO node class への移植
@@ -57,13 +78,20 @@ private:
     int unsent_stack_marker = 0;  // TODO node class への移植
 
     bool display_heart_beat = false;
+
     // LAN
     IPAddress local_ip;
     uint32_t recv_port;
     IPAddress destination_ip;
     uint32_t send_port;
+
     // Encoder Button
     Unit_Encoder encoder_button;
+
+    // for Manual Operating
+    manual_operating_state manual_operating_state_;
+
+    // << END Data
 
     // Function
     // >> UDP
@@ -85,12 +113,28 @@ public:
     void set_calc_time_of_udp_send_task(uint32_t ave_calc_time,
                                         uint32_t max_calc_time);
     // System
+    // >> State Machine
     void set_state_machine_initializing();
     void set_state_machine_ready();
     void set_state_machine_stable();
     void set_state_machine_force_stop();
+    // >> Command
     void cmd_executor();
     bool check_force_stop();
+    node_state_machine check_state_machine();
+
+    void set_cmd_change_state_machine(node_state_machine state_machine);
+    void set_cmd_change_servo_id(uint8_t servo_id);
+    void set_cmd_change_servo_power(uint8_t servo_id, bool is_power_on);
+    void set_cmd_change_servo_ctrl_mode(uint8_t servo_id,
+                                        basic_servo_ctrl_cmd_list ctrl_mode);
+    void set_cmd_position_control(uint8_t servo_id, double target_position);
+    void set_cmd_velocity_control(uint8_t servo_id, double velocity);
+    void set_cmd_torque_control(uint8_t servo_id, double torque);
+
+    // >> System Operating Mode
+    void update_manual_operating();
+
     // EMS Button
     void set_emergency_stop_for_control_task(bool em_stop);
     // Encoder Button
@@ -98,6 +142,7 @@ public:
                               uint8_t addr = ENCODER_ADDR);
     void update_encoder_button();
     void update_encoder_button(bool force_stop_status);
+    bool check_encoder_button_flag();
     // Display
     void set_canvas(M5Canvas* canvas_);
     void updateDisplay();
@@ -113,4 +158,5 @@ public:
     int get_udp_send_packet(uint8_t* packetBuffer);
     // Control Unit
     void set_control_state(ControlState& state);
+    void set_control_cmd(std::shared_ptr<node_cmd> cmd);
 };
