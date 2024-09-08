@@ -11,6 +11,7 @@ void ControlManager::update_cybergear_status(twai_message_t& rx_msg) {
 
     XiaomiCyberGearStatus& status = motor_status[can_id];
     cybergear_driver.update_ram_data(rx_msg, status);
+    /*
     M5_LOGI("ControlManager::update_cybergear_status: can_id: %d", can_id);
     M5_LOGI("ControlManager::update_cybergear_status: ctrl_mode: %d",
             status.ctrl_mode);
@@ -40,12 +41,33 @@ void ControlManager::update_cybergear_status(twai_message_t& rx_msg) {
             status.cur_ki);
     M5_LOGI("ControlManager::update_cybergear_status: cur_filter_gain: %f",
             status.cur_filter_gain);
+            */
 }
 
 void ControlManager::get_motor_id(uint8_t can_id) {
     twai_message_t msg;
     cybergear_driver.get_motor_id(can_id, msg);
     send_can_packet_task(msg);
+}
+
+void ControlManager::recv_can() {
+    while (is_waiting_rx_can) {
+        twai_message_t rx_msg;
+        if (recv_can_packet_task(rx_msg)) {
+            is_waiting_rx_can = false;
+        }
+        // recv_can_packet_task(rx_msg);
+        // uint8_t recieved_master_can_id = rx_msg.identifier & 0x000000FF;
+        // M5_LOGI("ControlManager::update: recieved_master_can_id: %d",
+        //        recieved_master_can_id);
+        uint8_t can_id = (rx_msg.identifier & 0x0000FF00) >> 8;
+        M5_LOGI("ControlManager::update: can_id: %d", can_id);
+        if ((can_id) == 0x10) {
+            update_cybergear_status(rx_msg);
+            is_waiting_rx_can = false;
+            is_connecting_servo = true;
+        }
+    }
 }
 
 ControlManager::ControlManager() {
@@ -62,6 +84,11 @@ std::shared_ptr<node_cmd> ControlManager::get_cmd_ptr() {
 void ControlManager::update() {
     if (state_machine_ != node_state_machine::STABLE) {
         state_.is_power_on = false;
+    }
+
+    if (state_machine_ == node_state_machine::READY && !is_connecting_servo) {
+        get_motor_id(0x10);
+        is_waiting_rx_can = true;
     }
 
     if (state_.is_power_on) {
@@ -93,13 +120,7 @@ void ControlManager::update() {
             0.05 * (state_.cmd_joint_torque - state_.act_joint_torque);
     }
 
-    while (is_waiting_rx_can) {
-        twai_message_t rx_msg;
-        recv_can_packet_task(rx_msg);
-        if (rx_msg.identifier == 0x10) {
-            update_cybergear_status(rx_msg);
-        }
-    }
+    recv_can();
 }
 
 void ControlManager::cmd_executor() {
@@ -254,11 +275,18 @@ void ControlManager::send_can_packet_task(const twai_message_t& packet) {
     twai_transmit(&packet, portMAX_DELAY);
     set_send_packet(packet);
 }
-void ControlManager::recv_can_packet_task(twai_message_t& packet) {
-    twai_receive(&packet, portMAX_DELAY);
+bool ControlManager::recv_can_packet_task(twai_message_t& packet) {
+    auto ret = twai_receive(&packet, portMAX_DELAY);
+    if (ret != ESP_OK) {
+        M5_LOGE(
+            "ControlManager::recv_can_packet_task: Failed to receive CAN "
+            "packet");
+        return false;
+    }
     update_cybergear_status(packet);
     rx_can_cnt++;
     set_receive_packet(packet);
+    return true;
 }
 void ControlManager::set_receive_packet(const twai_message_t& packet) {
     receive_can_packet = packet;

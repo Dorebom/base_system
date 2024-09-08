@@ -445,38 +445,92 @@ void SystemManager::set_cmd_position_control(uint8_t servo_id,
 
 void SystemManager::update_manual_operating() {
     int diff = 0;
-    // >> ダブルクリックされたら、モードを変更
+    // >> ダブルクリックされたら、フェーズを変更
     if (manual_operating_state_.act_encoder_button_flag_double_pressed) {
-        manual_operating_state_.encoder_offest =
-            manual_operating_state_.act_encoder_value;
-        switch (manual_operating_state_.mode) {
-            case manual_operating_mode::NONE:
-                manual_operating_state_.mode = manual_operating_mode::CHANGE_SM;
+        switch (manual_operating_state_.act_phase) {
+            case manual_operating_phase::VALUE_CHANGE:
+                manual_operating_state_.act_phase =
+                    manual_operating_phase::MODE_CHANGE;
                 break;
-            case manual_operating_mode::CHANGE_SM:
-                manual_operating_state_.mode =
-                    manual_operating_mode::CHANGE_SERVO_ID;
-                break;
-            case manual_operating_mode::CHANGE_SERVO_ID:
-                manual_operating_state_.mode =
-                    manual_operating_mode::CHANGE_SERVO_POWER;
-                break;
-            case manual_operating_mode::CHANGE_SERVO_POWER:
-                manual_operating_state_.mode =
-                    manual_operating_mode::CHANGE_SERVO_CONTROL_MODE;
-                break;
-            case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
-                manual_operating_state_.mode =
-                    manual_operating_mode::CMD_SERVO_CONTROL;
-                break;
-            case manual_operating_mode::CMD_SERVO_CONTROL:
-                manual_operating_state_.mode = manual_operating_mode::NONE;
+            case manual_operating_phase::MODE_CHANGE:
+                manual_operating_state_.act_phase =
+                    manual_operating_phase::VALUE_CHANGE;
                 break;
             default:
                 break;
         }
-    } else {
-        // command stackに命令を追加
+        manual_operating_state_.encoder_offest =
+            manual_operating_state_.act_encoder_value;
+    }
+
+    if (manual_operating_state_.act_phase ==
+        manual_operating_phase::MODE_CHANGE) {
+        if (manual_operating_state_.act_encoder_value >
+            manual_operating_state_.encoder_offest + 1) {
+            // command stackに命令を追加
+            switch (manual_operating_state_.mode) {
+                case manual_operating_mode::NONE:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_SM;
+                    break;
+                case manual_operating_mode::CHANGE_SM:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_SERVO_ID;
+                    break;
+                case manual_operating_mode::CHANGE_SERVO_ID:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_SERVO_POWER;
+                    break;
+                case manual_operating_mode::CHANGE_SERVO_POWER:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_SERVO_CONTROL_MODE;
+                    break;
+                case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CMD_SERVO_CONTROL;
+                    break;
+                // 循環させない
+                // case manual_operating_mode::CMD_SERVO_CONTROL:
+                //    manual_operating_state_.mode =
+                //    manual_operating_mode::NONE; break;
+                default:
+                    break;
+            }
+            manual_operating_state_.encoder_offest =
+                manual_operating_state_.act_encoder_value;
+        } else if (manual_operating_state_.act_encoder_value <
+                   manual_operating_state_.encoder_offest - 1) {
+            // command stackに命令を追加
+            switch (manual_operating_state_.mode) {
+                case manual_operating_mode::CMD_SERVO_CONTROL:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_SERVO_CONTROL_MODE;
+                    break;
+                case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_SERVO_POWER;
+                    break;
+                case manual_operating_mode::CHANGE_SERVO_POWER:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_SERVO_ID;
+                    break;
+                case manual_operating_mode::CHANGE_SERVO_ID:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_SM;
+                    break;
+                case manual_operating_mode::CHANGE_SM:
+                    manual_operating_state_.mode = manual_operating_mode::NONE;
+                    break;
+                default:
+                    break;
+            }
+            manual_operating_state_.encoder_offest =
+                manual_operating_state_.act_encoder_value;
+        }
+    }
+
+    if (manual_operating_state_.act_phase ==
+        manual_operating_phase::VALUE_CHANGE) {
         switch (manual_operating_state_.mode) {
             case manual_operating_mode::CHANGE_SM:
                 if (manual_operating_state_.act_encoder_value >
@@ -691,24 +745,35 @@ void SystemManager::updateDisplay() {
     }
     // 1.2 System Status
     canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-    canvas->printf("System Status\r\n");
-    switch (system_state_data.state_code.state_machine) {
-        case node_state_machine::INITIALIZING:
-            canvas->printf("SM: Initializing\r\n");
-            break;
-        case node_state_machine::READY:
-            canvas->printf("SM: Ready\r\n");
-            break;
-        case node_state_machine::STABLE:
-            canvas->printf("SM: Stable\r\n");
-            break;
-        case node_state_machine::FORCE_STOP:
-            canvas->printf("SM: Force Stop\r\n");
-            break;
-        default:
-            break;
-    }
+    canvas->printf(">> System Status\r\n");
 
+    if (manual_operating_state_.mode == manual_operating_mode::CHANGE_SM &&
+        manual_operating_state_.act_phase ==
+            manual_operating_phase::VALUE_CHANGE &&
+        display_blink_cnt % 5 == 0) {
+        canvas->printf("SM: \r\n");
+    } else {
+        switch (system_state_data.state_code.state_machine) {
+            case node_state_machine::INITIALIZING:
+                canvas->printf("SM: Initializing\r\n");
+                break;
+            case node_state_machine::READY:
+                canvas->printf("SM: Ready\r\n");
+                break;
+            case node_state_machine::STABLE:
+                canvas->printf("SM: Stable\r\n");
+                break;
+            case node_state_machine::FORCE_STOP:
+                if (display_heart_beat) {
+                    canvas->printf("SM: Force Stop\r\n");
+                } else {
+                    canvas->printf("SM: \r\n");
+                }
+                break;
+            default:
+                break;
+        }
+    }
     if (system_state_->emergency_stop_switch_for_control_task) {
         canvas->printf("EMS:ON\r\n");
     } else {
@@ -728,44 +793,43 @@ void SystemManager::updateDisplay() {
                    system_state_->max_calc_time_of_main_task);
 
     // Manual Operating
-    if (manual_operating_state_.mode == manual_operating_mode::NONE) {
-        canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-        canvas->printf("Manual Operating\r\n");
-        canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+    canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+    canvas->printf("Manual Operating\r\n");
+    if (manual_operating_state_.act_phase ==
+            manual_operating_phase::MODE_CHANGE &&
+        display_blink_cnt % 5 == 0) {
+        canvas->printf("Mode: \r\n");
     } else {
-        canvas->setTextSize(TITLE_FONT_SIZE);
-        canvas->printf("Manual Operating\r\n");
-        canvas->setTextSize(TEXT_FONT_SIZE);
-    }
-    switch (manual_operating_state_.mode) {
-        case manual_operating_mode::NONE:
-            canvas->printf("Mode: NONE\r\n");
-            break;
-        case manual_operating_mode::CHANGE_SM:
-            canvas->printf("Mode: CHANGE_SM\r\n");
-            break;
-        case manual_operating_mode::CHANGE_SERVO_ID:
-            canvas->printf("Mode: CHANGE_SRV_ID\r\n");
-            break;
-        case manual_operating_mode::CHANGE_SERVO_POWER:
-            canvas->printf("Mode: CHANGE_SRV_POWER\r\n");
-            break;
-        case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
-            canvas->printf("Mode: CHANGE_SRV_CTRLMODE\r\n");
-            break;
-        case manual_operating_mode::CMD_SERVO_CONTROL:
-            canvas->printf("Mode: CMD_SRV_CONTROL\r\n");
-            break;
-        default:
-            break;
+        switch (manual_operating_state_.mode) {
+            case manual_operating_mode::NONE:
+                canvas->printf("Mode: NONE\r\n");
+                break;
+            case manual_operating_mode::CHANGE_SM:
+                canvas->printf("Mode: CHANGE_SM\r\n");
+                break;
+            case manual_operating_mode::CHANGE_SERVO_ID:
+                canvas->printf("Mode: CHANGE_SRV_ID\r\n");
+                break;
+            case manual_operating_mode::CHANGE_SERVO_POWER:
+                canvas->printf("Mode: CHANGE_SRV_POWER\r\n");
+                break;
+            case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
+                canvas->printf("Mode: CHANGE_SRV_CTRLMODE\r\n");
+                break;
+            case manual_operating_mode::CMD_SERVO_CONTROL:
+                canvas->printf("Mode: CMD_SRV_CONTROL\r\n");
+                break;
+            default:
+                break;
+        }
     }
     // << END Manual Operating
-    canvas->setTextSize(TEXT_FONT_SIZE);
+    canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
     canvas->printf("Recent Recv Cmd: %d \r\n", system_state_->act_cmd_type);
 
     // 1.3 Control Status
-    canvas->setTextSize(TITLE_FONT_SIZE);
-    canvas->printf("Control Status\r\n");
+    canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+    canvas->printf(">> Control Status\r\n");
     canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
     canvas->printf("Ave: %d ms\t Max: %d ms\r\n",
                    system_state_->ave_calc_time_of_ctrl_task,
@@ -780,28 +844,55 @@ void SystemManager::updateDisplay() {
         }
 
         canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-        canvas->printf("SRV ID %d\r\n", control_state_->servo_id);
-        if (control_state_->is_power_on) {
-            canvas->printf("SRV Power ON\r\n");
+        if (manual_operating_state_.mode ==
+                manual_operating_mode::CHANGE_SERVO_ID &&
+            manual_operating_state_.act_phase ==
+                manual_operating_phase::VALUE_CHANGE &&
+            display_blink_cnt % 5 == 0) {
+            canvas->printf("SRV ID: \r\n");
         } else {
-            canvas->printf("SRV Power OFF\r\n");
+            canvas->printf("SRV ID: %d\r\n", control_state_->servo_id);
         }
-        switch (control_state_->ctrl_mode) {
-            case basic_servo_ctrl_cmd_list::TORQUE:
-                canvas->printf("SRV Ctrl Mode: TORQUE\r\n");
-                break;
-            case basic_servo_ctrl_cmd_list::VELOCITY:
-                canvas->printf("SRV Ctrl Mode: VELOCITY\r\n");
-                break;
-            case basic_servo_ctrl_cmd_list::POSITION:
-                canvas->printf("SRV Ctrl Mode: POSITION\r\n");
-                break;
-            case basic_servo_ctrl_cmd_list::STAY:
-                canvas->printf("SRV Ctrl Mode: STAY\r\n");
-                break;
-            default:
-                break;
+
+        if (manual_operating_state_.mode ==
+                manual_operating_mode::CHANGE_SERVO_POWER &&
+            manual_operating_state_.act_phase ==
+                manual_operating_phase::VALUE_CHANGE &&
+            display_blink_cnt % 5 == 0) {
+            canvas->printf("SRV Power: \r\n");
+        } else {
+            if (control_state_->is_power_on) {
+                canvas->printf("SRV Power: ON\r\n");
+            } else {
+                canvas->printf("SRV Power: OFF\r\n");
+            }
         }
+
+        if (manual_operating_state_.mode ==
+                manual_operating_mode::CHANGE_SERVO_CONTROL_MODE &&
+            manual_operating_state_.act_phase ==
+                manual_operating_phase::VALUE_CHANGE &&
+            display_blink_cnt % 5 == 0) {
+            canvas->printf("SRV Ctrl Mode: \r\n");
+        } else {
+            switch (control_state_->ctrl_mode) {
+                case basic_servo_ctrl_cmd_list::TORQUE:
+                    canvas->printf("SRV Ctrl Mode: TORQUE\r\n");
+                    break;
+                case basic_servo_ctrl_cmd_list::VELOCITY:
+                    canvas->printf("SRV Ctrl Mode: VELOCITY\r\n");
+                    break;
+                case basic_servo_ctrl_cmd_list::POSITION:
+                    canvas->printf("SRV Ctrl Mode: POSITION\r\n");
+                    break;
+                case basic_servo_ctrl_cmd_list::STAY:
+                    canvas->printf("SRV Ctrl Mode: STAY\r\n");
+                    break;
+                default:
+                    break;
+            }
+        }
+
         if (control_state_->is_init_joint_pos) {
             canvas->printf("Joint Pos: %.3f \t Vel: %.2f \t Trq: %.3f \r\n",
                            control_state_->act_joint_position,
@@ -818,7 +909,7 @@ void SystemManager::updateDisplay() {
 
     if (is_init_lan) {
         canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-        canvas->printf("LAN Status\r\n");
+        canvas->printf(">> LAN Status\r\n");
         canvas->printf("Local IP: %s\r\n", local_ip.toString().c_str());
         canvas->printf("Dst IP: %s\r\n", destination_ip.toString().c_str());
         canvas->printf("Recv Port: %d \t Send Port: %d\r\n", recv_port,
@@ -837,6 +928,11 @@ void SystemManager::updateDisplay() {
     // Update the canvas
     canvas->endWrite();
     canvas->pushSprite(0, 0);
+
+    display_blink_cnt++;
+    if (display_blink_cnt > 5) {
+        display_blink_cnt = 0;
+    }
 
     // M5DEV_LOGI("Canvas updated");
 }

@@ -78,6 +78,7 @@ private:
     int unsent_stack_marker = 0;  // TODO node class への移植
 
     bool display_heart_beat = false;
+    uint8_t display_blink_cnt = 0;
 
     // LAN
     IPAddress local_ip;

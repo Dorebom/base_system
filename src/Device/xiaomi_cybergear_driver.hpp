@@ -184,7 +184,7 @@ public:
      *
      * 0: Get Motor ID
      * 1: Motion Control (The control API will be explained later.)
-     * 2: Response Motion State
+     * 2: Response Motion State: ホストID
      * 3: Enable Motor
      * 4: Stop Motor
      * 6: Set Mechanical Position to Zero

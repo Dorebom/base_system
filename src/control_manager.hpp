@@ -41,6 +41,7 @@ private:
     CircularBuffer<twai_message_t, 10> receive_can_packet_buffer;
     CircularBuffer<twai_message_t, 10> send_can_packet_buffer;
     uint8_t rx_can_cnt;
+    bool is_connecting_servo = false;
     bool is_waiting_rx_can = false;
     XiaomiCyberGearDriver cybergear_driver;
     void update_cybergear_status(twai_message_t& rx_msg);
@@ -51,6 +52,7 @@ private:
         motor_status[0x10].can_id = 0x10;
     }
     void get_motor_id(uint8_t can_id);
+    void recv_can();
     // << END CAN
 
     bool is_init_all = false;
@@ -82,7 +84,7 @@ public:
     // CAN
     void init_twai(uint8_t tx_num, uint8_t rx_num);
     void send_can_packet_task(const twai_message_t& packet);
-    void recv_can_packet_task(twai_message_t& packet);
+    bool recv_can_packet_task(twai_message_t& packet);
     void set_receive_packet(const twai_message_t& packet);
     void set_send_packet(const twai_message_t& packet);
     void init_motor_driver() {
