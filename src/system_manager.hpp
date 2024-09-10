@@ -124,6 +124,8 @@ public:
     bool check_force_stop();
     node_state_machine check_state_machine();
 
+    // >> Manual Operating Command
+    void set_cmd_connect_can(connected_can_switch connected_can_switch_);
     void set_cmd_change_state_machine(node_state_machine state_machine);
     void set_cmd_change_servo_id(uint8_t servo_id);
     void set_cmd_change_servo_power(uint8_t servo_id, bool is_power_on);

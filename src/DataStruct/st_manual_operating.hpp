@@ -7,13 +7,20 @@ enum class manual_operating_mode : int
     CHANGE_SERVO_ID,
     CHANGE_SERVO_POWER,
     CHANGE_SERVO_CONTROL_MODE,
-    CMD_SERVO_CONTROL
+    CMD_SERVO_CONTROL,
+    CONNECT_CAN
 };
 
 enum class manual_operating_phase : int
 {
     VALUE_CHANGE = 0,
     MODE_CHANGE = 1
+};
+
+enum class connected_can_switch : int
+{
+    DISCONNECT = 0,
+    CONNECT = 1
 };
 
 struct manual_operating_state

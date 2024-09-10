@@ -53,7 +53,9 @@ struct XiaomiCyberGearStatus
     uint8_t ctrl_mode;
 
     uint16_t can_id;
+    uint16_t master_id;
     uint64_t serial_id;
+    bool is_connected;
 
     XiaomiCyberGearStatus() {
         timestamp = 0;
@@ -92,7 +94,10 @@ struct XiaomiCyberGearStatus
         ctrl_mode = 0;
 
         can_id = 0;
+        master_id = 0;
         serial_id = 0;
+
+        is_connected = false;
     }
 };
 
@@ -129,26 +134,6 @@ private:
                               data);
     }
 
-    float translate_uint2float(uint16_t u_value, float min_value,
-                               float max_value) {
-        uint16_t type_max = 0xFFFF;
-        float span = max_value - min_value;
-        return min_value + span * (float)u_value / type_max;
-    }
-
-    uint16_t translate_float2uint(float f_value, float min_value,
-                                  float max_value, int bits) {
-        if (bits > 16)
-            bits = 16;
-        float span = max_value - min_value;
-        if (f_value < min_value)
-            f_value = min_value;
-        else if (f_value > max_value)
-            f_value = max_value;
-        return (uint16_t)((f_value - min_value) * ((float)((1 << bits) - 1)) /
-                          span);
-    }
-
     /*
      * Read RAM Value
      */
@@ -177,6 +162,26 @@ public:
     // Initialize
     void set_master_can_id(uint8_t master_can_id_) {
         master_can_id = master_can_id_;
+    }
+
+    float translate_uint2float(uint16_t u_value, float min_value,
+                               float max_value) {
+        uint16_t type_max = 0xFFFF;
+        float span = max_value - min_value;
+        return min_value + span * (float)u_value / type_max;
+    }
+
+    uint16_t translate_float2uint(float f_value, float min_value,
+                                  float max_value, int bits) {
+        if (bits > 16)
+            bits = 16;
+        float span = max_value - min_value;
+        if (f_value < min_value)
+            f_value = min_value;
+        else if (f_value > max_value)
+            f_value = max_value;
+        return (uint16_t)((f_value - min_value) * ((float)((1 << bits) - 1)) /
+                          span);
     }
 
     /*

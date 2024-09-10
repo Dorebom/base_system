@@ -8,8 +8,9 @@ struct ControlState
 {
     bool is_init_scale;
     bool is_power_on;
+    bool act_can_connection_status;
     bool is_init_joint_pos;
-    bool dummy[5];
+    bool dummy[4];
 
     int servo_id;
     basic_servo_ctrl_cmd_list ctrl_mode;
@@ -21,14 +22,20 @@ struct ControlState
     double cmd_joint_velocity;
     double cmd_joint_torque;
 
+    double act_joint_position_0;
+    double act_joint_velocity_0;
+    double act_joint_torque_0;
+
     // servo info
-    
 
     float sensor_weight;
     int32_t sensor_weight_raw_adc;
 
+    int waiting_servo_id;
+
     ControlState() {
         // >> Servo
+        act_can_connection_status = false;
         servo_id = 0;  // 0: not used, 1: servo1, 2: servo2
         is_init_joint_pos = false;
         is_power_on = false;
@@ -50,6 +57,7 @@ struct ControlState
 
     void deepcopy(const ControlState& state) {
         // >> Servo
+        act_can_connection_status = state.act_can_connection_status;
         servo_id = state.servo_id;
         is_init_joint_pos = state.is_init_joint_pos;
         is_power_on = state.is_power_on;

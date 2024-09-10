@@ -2,74 +2,6 @@
 
 #include "logger.hpp"
 
-void ControlManager::update_cybergear_status(twai_message_t& rx_msg) {
-    uint8_t can_id = rx_msg.identifier;
-    if (motor_status.find(can_id) == motor_status.end()) {
-        motor_status[can_id] = XiaomiCyberGearStatus();
-        motor_status[can_id].can_id = can_id;
-    }
-
-    XiaomiCyberGearStatus& status = motor_status[can_id];
-    cybergear_driver.update_ram_data(rx_msg, status);
-    /*
-    M5_LOGI("ControlManager::update_cybergear_status: can_id: %d", can_id);
-    M5_LOGI("ControlManager::update_cybergear_status: ctrl_mode: %d",
-            status.ctrl_mode);
-    M5_LOGI("ControlManager::update_cybergear_status: rotation: %d",
-            status.rotation);
-    M5_LOGI("ControlManager::update_cybergear_status: mech_pos: %f",
-            status.mech_pos);
-    M5_LOGI("ControlManager::update_cybergear_status: mech_vel: %f",
-            status.mech_vel);
-    M5_LOGI("ControlManager::update_cybergear_status: vbus: %f", status.vbus);
-    M5_LOGI("ControlManager::update_cybergear_status: iqf: %f", status.iqf);
-    M5_LOGI("ControlManager::update_cybergear_status: pos_ref: %f",
-            status.pos_ref);
-    M5_LOGI("ControlManager::update_cybergear_status: vel_ref: %f",
-            status.vel_ref);
-    M5_LOGI("ControlManager::update_cybergear_status: cur_ref: %f",
-            status.cur_ref);
-    M5_LOGI("ControlManager::update_cybergear_status: pos_kp: %f",
-            status.pos_kp);
-    M5_LOGI("ControlManager::update_cybergear_status: vel_kp: %f",
-            status.vel_kp);
-    M5_LOGI("ControlManager::update_cybergear_status: vel_ki: %f",
-            status.vel_ki);
-    M5_LOGI("ControlManager::update_cybergear_status: cur_kp: %f",
-            status.cur_kp);
-    M5_LOGI("ControlManager::update_cybergear_status: cur_ki: %f",
-            status.cur_ki);
-    M5_LOGI("ControlManager::update_cybergear_status: cur_filter_gain: %f",
-            status.cur_filter_gain);
-            */
-}
-
-void ControlManager::get_motor_id(uint8_t can_id) {
-    twai_message_t msg;
-    cybergear_driver.get_motor_id(can_id, msg);
-    send_can_packet_task(msg);
-}
-
-void ControlManager::recv_can() {
-    while (is_waiting_rx_can) {
-        twai_message_t rx_msg;
-        if (recv_can_packet_task(rx_msg)) {
-            is_waiting_rx_can = false;
-        }
-        // recv_can_packet_task(rx_msg);
-        // uint8_t recieved_master_can_id = rx_msg.identifier & 0x000000FF;
-        // M5_LOGI("ControlManager::update: recieved_master_can_id: %d",
-        //        recieved_master_can_id);
-        uint8_t can_id = (rx_msg.identifier & 0x0000FF00) >> 8;
-        M5_LOGI("ControlManager::update: can_id: %d", can_id);
-        if ((can_id) == 0x10) {
-            update_cybergear_status(rx_msg);
-            is_waiting_rx_can = false;
-            is_connecting_servo = true;
-        }
-    }
-}
-
 ControlManager::ControlManager() {
     ctrl_cmd_ = std::make_shared<node_cmd>(MAX_CTRL_CMD_STACK_SIZE);
 }
@@ -77,50 +9,72 @@ ControlManager::ControlManager() {
 ControlManager::~ControlManager() {
 }
 
-std::shared_ptr<node_cmd> ControlManager::get_cmd_ptr() {
-    return ctrl_cmd_;
-}
-
 void ControlManager::update() {
     if (state_machine_ != node_state_machine::STABLE) {
         state_.is_power_on = false;
     }
 
-    if (state_machine_ == node_state_machine::READY && !is_connecting_servo) {
-        get_motor_id(0x10);
-        is_waiting_rx_can = true;
-    }
-
-    if (state_.is_power_on) {
-        switch (state_.ctrl_mode) {
-            case basic_servo_ctrl_cmd_list::STAY:
-                break;
-            case basic_servo_ctrl_cmd_list::POSITION:
-                state_.act_joint_position += 0.05 * (state_.cmd_joint_position -
-                                                     state_.act_joint_position);
-                break;
-            case basic_servo_ctrl_cmd_list::VELOCITY:
-                state_.act_joint_velocity += 0.05 * (state_.cmd_joint_velocity -
-                                                     state_.act_joint_velocity);
-                break;
-            case basic_servo_ctrl_cmd_list::TORQUE:
-                state_.act_joint_torque +=
-                    0.05 * (state_.cmd_joint_torque - state_.act_joint_torque);
-                break;
-            default:
-                break;
+    // CAN(Cybergear) Connected
+    if (state_.act_can_connection_status) {
+        if (state_.is_power_on) {
+            // M5_LOGI("Ctrl Mode: %d", state_.ctrl_mode);
+            switch (state_.ctrl_mode) {
+                case basic_servo_ctrl_cmd_list::STAY:
+                    stay_motor(state_.servo_id);
+                    break;
+                case basic_servo_ctrl_cmd_list::POSITION:
+                    position_control(state_.servo_id,
+                                     state_.cmd_joint_position);
+                    break;
+                case basic_servo_ctrl_cmd_list::VELOCITY:
+                    velocity_control(state_.servo_id,
+                                     state_.cmd_joint_velocity);
+                    break;
+                case basic_servo_ctrl_cmd_list::TORQUE:
+                    torque_control(state_.servo_id, state_.cmd_joint_torque);
+                    break;
+                default:
+                    break;
+            }
+        } else {
+            stop_motor(state_.servo_id);
         }
-    } else {
-        state_.cmd_joint_velocity = 0.0;
-        state_.cmd_joint_torque = 0.0;
-        state_.cmd_joint_position = state_.act_joint_position;
-        state_.act_joint_velocity +=
-            0.05 * (state_.cmd_joint_velocity - state_.act_joint_velocity);
-        state_.act_joint_torque +=
-            0.05 * (state_.cmd_joint_torque - state_.act_joint_torque);
-    }
+    } else {  // CAN(Cybergear) is not Connected
+        if (!state_.is_init_joint_pos) {
+            init_servo_dummy();
+        }
 
-    recv_can();
+        if (state_.is_power_on) {
+            switch (state_.ctrl_mode) {
+                case basic_servo_ctrl_cmd_list::STAY:
+                    break;
+                case basic_servo_ctrl_cmd_list::POSITION:
+                    state_.act_joint_position +=
+                        0.05 *
+                        (state_.cmd_joint_position - state_.act_joint_position);
+                    break;
+                case basic_servo_ctrl_cmd_list::VELOCITY:
+                    state_.act_joint_velocity +=
+                        0.05 *
+                        (state_.cmd_joint_velocity - state_.act_joint_velocity);
+                    break;
+                case basic_servo_ctrl_cmd_list::TORQUE:
+                    state_.act_joint_torque += 0.05 * (state_.cmd_joint_torque -
+                                                       state_.act_joint_torque);
+                    break;
+                default:
+                    break;
+            }
+        } else {
+            state_.cmd_joint_velocity = 0.0;
+            state_.cmd_joint_torque = 0.0;
+            state_.cmd_joint_position = state_.act_joint_position;
+            state_.act_joint_velocity +=
+                0.05 * (state_.cmd_joint_velocity - state_.act_joint_velocity);
+            state_.act_joint_torque +=
+                0.05 * (state_.cmd_joint_torque - state_.act_joint_torque);
+        }
+    }
 }
 
 void ControlManager::cmd_executor() {
@@ -141,7 +95,7 @@ void ControlManager::cmd_executor() {
         switch (cmd.cmd_code.cmd_type) {
             case basic_m5stack_cmd_list::CHANGE_CONTROLLED_SRV_ID:
                 temp_data_1 = (cmd_change_controlled_servo_id*)cmd.data;
-                set_controlled_servo_id(temp_data_1->servo_id);
+                change_controlled_servo_id(temp_data_1->servo_id);
                 break;
             case basic_m5stack_cmd_list::CHANGE_SRV_POWER:
                 temp_data_2 = (cmd_change_servo_power*)cmd.data;
@@ -166,22 +120,35 @@ void ControlManager::cmd_executor() {
                 temp_data_6 = (cmd_torque_control*)cmd.data;
                 set_servo_torque(temp_data_6->servo_id, temp_data_6->torque);
                 break;
+            // case basic_m5stack_cmd_list::CONNECT_CAN:
+            //     if (!state_.act_can_connection_status) {
+            //         state_.act_can_connection_status =
+            //         check_connecting_servo();
+            //     }
+            //     break;
+            case basic_m5stack_cmd_list::DISCONNECT_CAN:
+                state_.act_can_connection_status = false;
+                break;
             case basic_m5stack_cmd_list::CHANGE_SM_FORCE_STOP:
                 break;
             default:
                 break;
         }
-
-    } else {
-        return;
     }
 }
 
-void ControlManager::init_servo_dummy() {
-    state_.is_init_joint_pos = true;
-    state_.act_joint_position = 0.0;
-    state_.act_joint_velocity = 0.0;
-    state_.act_joint_torque = 0.0;
+std::shared_ptr<node_cmd> ControlManager::get_cmd_ptr() {
+    return ctrl_cmd_;
+}
+
+bool ControlManager::check_init_all() {
+    return is_init_all;
+}
+
+void ControlManager::set_emergency_stop(bool em_stop) {
+    if (em_stop) {
+        state_.is_power_on = false;
+    }
 }
 
 void ControlManager::get_control_state(ControlState& state) {
@@ -192,8 +159,332 @@ void ControlManager::set_state_machine(node_state_machine state_machine) {
     state_machine_ = state_machine;
 }
 
-bool ControlManager::check_init_all() {
-    return is_init_all;
+// ちゃんとつながってデータも合ってたらtrueを返す
+bool ControlManager::recv_can() {
+    twai_message_t rx_msg;
+    bool is_recv_can = recv_can_packet_task(rx_msg);
+
+    uint8_t can_id;
+    XiaomiCyberGearStatus* motor_status_;
+    uint8_t msg_cmd;
+
+    if (is_recv_can) {
+        // 受信データの解析
+        can_id = (rx_msg.identifier & 0x0000FF00) >> 8;
+        motor_status_ = &motor_status[can_id];
+        msg_cmd = (rx_msg.identifier & 0xFF000000) >> 24;
+
+        // ここで、mapに登録がない場合は、登録する
+        if (motor_status.find(can_id) == motor_status.end()) {
+            motor_status[can_id] = XiaomiCyberGearStatus();
+            motor_status[can_id].can_id = can_id;
+        }
+
+        // M5_LOGI("ControlManager::recv_can: CAN ID: %d", can_id);
+        // M5_LOGI("ControlManager::recv_can: CMD: %d", msg_cmd);
+        // M5_LOGI("0xFE: %d", rx_msg.identifier & 0x000000FF);
+        //  　ここで、受信データの詳細解析を行う
+        switch (msg_cmd) {
+            case CMD_GET_ID:
+                if (!motor_status_->is_connected) {
+                    if (((rx_msg.identifier & 0x000000FF) == 0xFE) &&
+                        can_id == state_.waiting_servo_id) {
+                        M5_LOGI(
+                            "ControlManager::check_connecting_servo: Connected "
+                            "(%d)",
+                            can_id);
+                        motor_status_->is_connected = true;
+                        motor_status_->serial_id =
+                            (uint64_t)rx_msg.data[7] << 56 |
+                            (uint64_t)rx_msg.data[6] << 48 |
+                            (uint64_t)rx_msg.data[5] << 40 |
+                            (uint64_t)rx_msg.data[4] << 32 |
+                            (uint64_t)rx_msg.data[3] << 24 |
+                            (uint64_t)rx_msg.data[2] << 16 |
+                            (uint64_t)rx_msg.data[1] << 8 |
+                            (uint64_t)rx_msg.data[0];
+                        return true;
+                    } else {
+                        M5_LOGI(
+                            "ControlManager::check_connecting_servo: Not "
+                            "Connected "
+                            "(%d)",
+                            can_id);
+                        motor_status_->is_connected = false;
+                        return false;
+                    }
+                }
+                M5_LOGI(
+                    "ControlManager::check_connecting_servo: Already Connected "
+                    "(%d)",
+                    can_id);
+                break;
+            case CMD_RESPONSE_MOTION_STATE:
+                // RAW
+                motor_status_->raw_position = rx_msg.data[1] | rx_msg.data[0]
+                                                                   << 8;
+                motor_status_->raw_velocity = rx_msg.data[3] | rx_msg.data[2]
+                                                                   << 8;
+                motor_status_->raw_effort = rx_msg.data[5] | rx_msg.data[4]
+                                                                 << 8;
+                motor_status_->raw_temperature = rx_msg.data[7] | rx_msg.data[6]
+                                                                      << 8;
+                // RAW -> ACT
+                motor_status_->act_position =
+                    cybergear_driver.translate_uint2float(
+                        motor_status_->raw_position, POS_MIN, POS_MAX);
+                motor_status_->act_velocity =
+                    cybergear_driver.translate_uint2float(
+                        motor_status_->raw_velocity, VEL_MIN, VEL_MAX);
+                motor_status_->act_effort =
+                    cybergear_driver.translate_uint2float(
+                        motor_status_->raw_effort, T_MIN, T_MAX);
+                motor_status_->act_temperature =
+                    (float)motor_status_->raw_temperature * 0.1;
+                // TIMESTAMP
+                motor_status_->timestamp = micros();
+                //
+                motor_status_->master_id = (rx_msg.identifier & 0x000000FF);
+
+                state_.act_joint_position = motor_status_->act_position;
+                state_.act_joint_velocity = motor_status_->act_velocity;
+                state_.act_joint_torque = motor_status_->act_effort;
+
+                if (!state_.is_init_joint_pos) {
+                    state_.is_init_joint_pos = true;
+                }
+                return true;
+                break;
+            case CMD_RAM_READ:
+                /* code */
+                break;
+            case CMD_GET_MOTOR_FAIL:
+                /* code */
+                break;
+            default:
+                break;
+        }
+    } else {
+        M5_LOGW(
+            "ControlManager::check_connecting_servo: Failed to receive CAN "
+            "packet");
+        return false;
+    }
+    return false;
+}
+
+void ControlManager::stop_motor(uint8_t can_id) {
+    twai_message_t msg;
+    cybergear_driver.stop_motor(can_id, msg);
+    send_can_packet_task(msg);
+    recv_can();
+    state_.is_power_on = false;
+}
+
+void ControlManager::stay_motor(uint8_t can_id) {
+    twai_message_t msg;
+    cybergear_driver.set_position_mode(can_id, msg);
+    send_can_packet_task(msg);
+    recv_can();
+
+    cybergear_driver.set_position_ref(can_id, state_.act_joint_position_0, msg);
+    send_can_packet_task(msg);
+    recv_can();
+}
+
+void ControlManager::position_control(uint8_t can_id, double target_position) {
+    twai_message_t msg;
+    cybergear_driver.set_position_ref(can_id, target_position, msg);
+    send_can_packet_task(msg);
+    recv_can();
+}
+
+void ControlManager::velocity_control(uint8_t can_id, double target_velocity) {
+    twai_message_t msg;
+    cybergear_driver.set_spd_ref(can_id, target_velocity, msg);
+    send_can_packet_task(msg);
+    recv_can();
+}
+
+void ControlManager::torque_control(uint8_t can_id, double target_torque) {
+    twai_message_t msg;
+    cybergear_driver.set_iq_ref(can_id, target_torque, msg);
+    send_can_packet_task(msg);
+    recv_can();
+}
+
+void ControlManager::init_servo_dummy() {
+    state_.is_init_joint_pos = true;
+    state_.act_joint_position = 0.0;
+    state_.act_joint_velocity = 0.0;
+    state_.act_joint_torque = 0.0;
+}
+
+void ControlManager::get_motor_id(uint8_t can_id) {
+    twai_message_t msg;
+    cybergear_driver.get_motor_id(can_id, msg);
+    send_can_packet_task(msg);
+}
+
+void ControlManager::set_controlled_servo_id(uint8_t servo_id) {
+    // send
+    get_motor_id(servo_id);
+    // recv
+    state_.act_can_connection_status = recv_can();
+    if (state_.act_can_connection_status) {
+        M5_LOGI("ControlManager::set_controlled_servo_id: Connected (%d)",
+                servo_id);
+    } else {
+        M5_LOGI("ControlManager::set_controlled_servo_id: Not Connected (%d)",
+                servo_id);
+    }
+    // SET
+    state_.servo_id = servo_id;
+    // RESET
+    // ---
+}
+
+// [NOTE]単軸モードで使う想定の関数
+void ControlManager::change_controlled_servo_id(uint8_t servo_id) {
+    // 前処理
+    // >> 現在のサーボに停止処理を送る
+    if (state_.act_can_connection_status) {
+        stop_motor(state_.servo_id);
+        motor_status[state_.servo_id].is_connected = false;
+        M5_LOGI("ControlManager::change_controlled_servo_id: Disconnected (%d)",
+                state_.servo_id);
+    }
+    // SET
+    state_.waiting_servo_id = servo_id;
+    // RESET
+    state_.is_init_joint_pos = false;
+    state_.act_can_connection_status = false;
+    state_.ctrl_mode = basic_servo_ctrl_cmd_list::STAY;
+    // 処理
+    // >> 新しいサーボに接続処理を送る
+    set_controlled_servo_id(servo_id);
+}
+
+void ControlManager::set_servo_power(uint8_t servo_id, bool is_power_on) {
+    if (is_power_on && state_.is_init_joint_pos) {
+        state_.cmd_joint_position = state_.act_joint_position;
+        state_.cmd_joint_velocity = 0.0;
+        state_.cmd_joint_torque = 0.0;  // TODO: Implement
+
+        state_.act_joint_position_0 = state_.act_joint_position;
+        state_.act_joint_velocity_0 = 0.0f;
+        state_.act_joint_torque_0 = 0.0f;
+
+        if (state_.act_can_connection_status) {  // CAN Connected
+            twai_message_t msg;
+            cybergear_driver.enable_motor(servo_id, msg);
+            send_can_packet_task(msg);
+            recv_can();
+            state_.is_power_on = true;
+        } else {  // CAN Disconnected
+            state_.is_power_on = true;
+        }
+    } else {
+        if (state_.act_can_connection_status) {  // CAN Connected
+            twai_message_t msg;
+            cybergear_driver.stop_motor(servo_id, msg);
+            send_can_packet_task(msg);
+            recv_can();
+            state_.is_power_on = false;
+        } else {  // CAN Disconnected
+            state_.is_power_on = false;
+        }
+    }
+}
+void ControlManager::set_servo_ctrl_mode(uint8_t servo_id,
+                                         basic_servo_ctrl_cmd_list ctrl_mode) {
+    twai_message_t msg;
+    if (state_.act_can_connection_status)  // CAN Connected
+    {
+        switch (ctrl_mode) {
+            case basic_servo_ctrl_cmd_list::STAY:
+                break;
+            case basic_servo_ctrl_cmd_list::POSITION:
+                state_.cmd_joint_position = state_.act_joint_position;
+                position_control(servo_id, state_.act_joint_position);
+                cybergear_driver.set_position_mode(servo_id, msg);
+                motor_status[servo_id].ctrl_mode = MODE_POSITION;
+                break;
+            case basic_servo_ctrl_cmd_list::VELOCITY:
+                state_.cmd_joint_velocity = 0.0;
+                velocity_control(servo_id, 0.0f);
+                cybergear_driver.set_velocity_mode(servo_id, msg);
+                motor_status[servo_id].ctrl_mode = MODE_SPEED;
+                break;
+            case basic_servo_ctrl_cmd_list::TORQUE:
+                state_.cmd_joint_torque = 0.0;
+                torque_control(servo_id, 0.0f);
+                cybergear_driver.set_current_mode(servo_id, msg);
+                motor_status[servo_id].ctrl_mode = MODE_CURRENT;
+                break;
+            case basic_servo_ctrl_cmd_list::MOTION:
+                cybergear_driver.set_motion_mode(servo_id, msg);
+                motor_status[servo_id].ctrl_mode = MODE_MOTION;
+                break;
+            default:
+                break;
+        }
+        send_can_packet_task(msg);
+        recv_can();
+        state_.ctrl_mode = ctrl_mode;
+    } else {  // CAN Disconnected
+        state_.ctrl_mode = ctrl_mode;
+    }
+}
+
+void ControlManager::set_servo_velocity(uint8_t servo_id,
+                                        double target_velocity) {
+    state_.cmd_joint_velocity = target_velocity;
+}
+void ControlManager::set_servo_torque(uint8_t servo_id, double target_torque) {
+    state_.cmd_joint_torque = target_torque;
+}
+void ControlManager::set_servo_position(uint8_t servo_id,
+                                        double target_position) {
+    state_.cmd_joint_position = target_position;
+}
+
+/////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////
+
+/*
+ * CAN
+ */
+void ControlManager::init_twai(uint8_t tx_num, uint8_t rx_num) {
+    gpio_num_t TX_GPIO_NUM = gpio_num_t(tx_num);
+    gpio_num_t RX_GPIO_NUM = gpio_num_t(rx_num);
+
+    twai_general_config_t g_config =
+        TWAI_GENERAL_CONFIG_DEFAULT(TX_GPIO_NUM, RX_GPIO_NUM, TWAI_MODE_NORMAL);
+    twai_timing_config_t t_config = TWAI_TIMING_CONFIG_1MBITS();
+    twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+    ESP_ERROR_CHECK(twai_driver_install(&g_config, &t_config, &f_config));
+    ESP_ERROR_CHECK(twai_start());
+}
+void ControlManager::send_can_packet_task(const twai_message_t& packet) {
+    twai_transmit(&packet, portMAX_DELAY);
+    set_send_packet(packet);
+}
+bool ControlManager::recv_can_packet_task(twai_message_t& packet) {
+    auto ret = twai_receive(&packet, pdMS_TO_TICKS(10));
+    if (ret != ESP_OK) {
+        M5_LOGE(
+            "ControlManager::recv_can_packet_task: Failed to receive CAN "
+            "packet");
+        return false;
+    }
+    rx_can_cnt++;
+    return true;
+}
+void ControlManager::set_send_packet(const twai_message_t& packet) {
+    send_can_packet = packet;
+    send_can_packet_buffer.push(packet);
 }
 
 /*
@@ -249,81 +540,5 @@ int32_t ControlManager::get_weightRawADC() {
     int32_t raw_adc = scale.getRawADC();
     state_.sensor_weight_raw_adc = raw_adc;
     return raw_adc;
-}
-
-void ControlManager::set_emergency_stop(bool em_stop) {
-    if (em_stop) {
-        state_.is_power_on = false;
-    }
-}
-
-/*
- * CAN
- */
-void ControlManager::init_twai(uint8_t tx_num, uint8_t rx_num) {
-    gpio_num_t TX_GPIO_NUM = gpio_num_t(tx_num);
-    gpio_num_t RX_GPIO_NUM = gpio_num_t(rx_num);
-
-    twai_general_config_t g_config =
-        TWAI_GENERAL_CONFIG_DEFAULT(TX_GPIO_NUM, RX_GPIO_NUM, TWAI_MODE_NORMAL);
-    twai_timing_config_t t_config = TWAI_TIMING_CONFIG_1MBITS();
-    twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-    ESP_ERROR_CHECK(twai_driver_install(&g_config, &t_config, &f_config));
-    ESP_ERROR_CHECK(twai_start());
-}
-void ControlManager::send_can_packet_task(const twai_message_t& packet) {
-    twai_transmit(&packet, portMAX_DELAY);
-    set_send_packet(packet);
-}
-bool ControlManager::recv_can_packet_task(twai_message_t& packet) {
-    auto ret = twai_receive(&packet, portMAX_DELAY);
-    if (ret != ESP_OK) {
-        M5_LOGE(
-            "ControlManager::recv_can_packet_task: Failed to receive CAN "
-            "packet");
-        return false;
-    }
-    update_cybergear_status(packet);
-    rx_can_cnt++;
-    set_receive_packet(packet);
-    return true;
-}
-void ControlManager::set_receive_packet(const twai_message_t& packet) {
-    receive_can_packet = packet;
-    receive_can_packet_buffer.push(packet);
-}
-void ControlManager::set_send_packet(const twai_message_t& packet) {
-    send_can_packet = packet;
-    send_can_packet_buffer.push(packet);
-}
-
-void ControlManager::set_controlled_servo_id(uint8_t servo_id) {
-    state_.servo_id = servo_id;
-}
-void ControlManager::set_servo_power(uint8_t servo_id, bool is_power_on) {
-    if (is_power_on && state_.is_init_joint_pos) {
-        state_.cmd_joint_position = state_.act_joint_position;
-        state_.cmd_joint_velocity = 0.0;
-        state_.cmd_joint_torque = 0.0;  // TODO: Implement
-
-        state_.is_power_on = true;
-    } else {
-        state_.is_power_on = false;
-    }
-}
-void ControlManager::set_servo_ctrl_mode(uint8_t servo_id,
-                                         basic_servo_ctrl_cmd_list ctrl_mode) {
-    state_.ctrl_mode = ctrl_mode;
-}
-void ControlManager::set_servo_velocity(uint8_t servo_id,
-                                        double target_velocity) {
-    state_.cmd_joint_velocity = target_velocity;
-}
-void ControlManager::set_servo_torque(uint8_t servo_id, double target_torque) {
-    state_.cmd_joint_torque = target_torque;
-}
-void ControlManager::set_servo_position(uint8_t servo_id,
-                                        double target_position) {
-    state_.cmd_joint_position = target_position;
 }
 // << END WEIGHT SCALE

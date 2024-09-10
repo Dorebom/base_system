@@ -23,6 +23,8 @@ enum class basic_m5stack_cmd_list : int
     RESET_ERROR,
     RESET_ALERT,
     // 以下、サーボ制御コマンド
+    CONNECT_CAN,
+    DISCONNECT_CAN,
     CHANGE_CONTROLLED_SRV_ID,
     CHANGE_SRV_POWER,  // ひとつだけサーボON/OFF
     CHANGE_SRV_CTRLMODE,
@@ -110,7 +112,8 @@ enum class basic_servo_ctrl_cmd_list : int
     STAY,
     POSITION,
     VELOCITY,
-    TORQUE
+    TORQUE,
+    MOTION
 };
 
 struct cmd_change_servo_ctrl_mode

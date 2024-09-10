@@ -28,12 +28,12 @@ struct control_status
 
 class ControlManager {
 private:
-    UNIT_SCALES scale;
-
     // Data
     control_status status_;
     ControlState state_;
     std::shared_ptr<node_cmd> ctrl_cmd_;
+    node_state_machine state_machine_;
+    bool is_init_all = false;
 
     // >> CAN
     twai_message_t receive_can_packet;
@@ -44,7 +44,6 @@ private:
     bool is_connecting_servo = false;
     bool is_waiting_rx_can = false;
     XiaomiCyberGearDriver cybergear_driver;
-    void update_cybergear_status(twai_message_t& rx_msg);
     std::map<uint8_t, XiaomiCyberGearStatus> motor_status;
     void init_motor_status() {
         motor_status.clear();
@@ -52,52 +51,61 @@ private:
         motor_status[0x10].can_id = 0x10;
     }
     void get_motor_id(uint8_t can_id);
-    void recv_can();
+    bool recv_can();
+    void stop_motor(uint8_t can_id);
+    void stay_motor(uint8_t can_id);
+    void position_control(uint8_t can_id, double target_position);
+    void velocity_control(uint8_t can_id, double target_velocity);
+    void torque_control(uint8_t can_id, double target_torque);
     // << END CAN
 
-    bool is_init_all = false;
+    // Sensor class
+    UNIT_SCALES scale;
 
-    node_state_machine state_machine_;
-
-public:
-    ControlManager();
-    ~ControlManager();
-    // System
-    std::shared_ptr<node_cmd> get_cmd_ptr();
-    void update();
-    void cmd_executor();
-    // << END System
-
-    void init_servo_dummy();
-    void get_control_state(ControlState& state);
-    void set_state_machine(node_state_machine state_machine);
-    bool check_init_all();
-
-    // weight scale
-    bool begin_scale(TwoWire& wire, uint8_t addr);
-    void reset_scale();
-    float get_weight();
-    int32_t get_weightRawADC();
-    // EMS Button
-    void set_emergency_stop(bool em_stop);
-
-    // CAN
-    void init_twai(uint8_t tx_num, uint8_t rx_num);
-    void send_can_packet_task(const twai_message_t& packet);
-    bool recv_can_packet_task(twai_message_t& packet);
-    void set_receive_packet(const twai_message_t& packet);
-    void set_send_packet(const twai_message_t& packet);
-    void init_motor_driver() {
-        cybergear_driver.set_master_can_id(0x00);
-        init_motor_status();
-    }
-
-    // Servo Config
+    // FUNCTIONS
+    // >> Servo Config
     void set_controlled_servo_id(uint8_t servo_id);
+    void change_controlled_servo_id(uint8_t servo_id);
     void set_servo_power(uint8_t servo_id, bool is_power_on);
     void set_servo_ctrl_mode(uint8_t servo_id,
                              basic_servo_ctrl_cmd_list ctrl_mode);
     void set_servo_position(uint8_t servo_id, double target_position);
     void set_servo_velocity(uint8_t servo_id, double target_velocity);
     void set_servo_torque(uint8_t servo_id, double target_torque);
+
+public:
+    ControlManager();
+    ~ControlManager();
+    // FUNCTIONS
+    // >> System
+    std::shared_ptr<node_cmd> get_cmd_ptr();
+    void update();
+    void cmd_executor();
+    void set_emergency_stop(bool em_stop);
+    // << END System
+
+    // >> OBSERVER
+    void get_control_state(ControlState& state);
+    void set_state_machine(node_state_machine state_machine);
+    bool check_init_all();
+    // << END OBSERVER
+    void init_servo_dummy();
+
+    // >> SENSOR >> weight scale
+    bool begin_scale(TwoWire& wire, uint8_t addr);
+    void reset_scale();
+    float get_weight();
+    int32_t get_weightRawADC();
+    // << END SENSOR
+
+    // >> SENSOR >> CAN
+    void init_twai(uint8_t tx_num, uint8_t rx_num);
+    void send_can_packet_task(const twai_message_t& packet);
+    bool recv_can_packet_task(twai_message_t& packet);
+    void set_send_packet(const twai_message_t& packet);
+    void init_motor_driver() {
+        cybergear_driver.set_master_can_id(0x00);
+        init_motor_status();
+    }
+    // << END SENSOR
 };

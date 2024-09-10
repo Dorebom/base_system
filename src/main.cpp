@@ -35,8 +35,8 @@ BoardType board_type = BoardType::M5STACK_CORES3;
 #define UDP_RECV_TASK_PRIORITY    1
 #define CTRL_TASK_PRIORITY        2
 
-#define CTRL_TASK_TIME_INTERVAL     10
-#define MAIN_TASK_TIME_INTERVAL     40
+#define CTRL_TASK_TIME_INTERVAL     5
+#define MAIN_TASK_TIME_INTERVAL     50
 #define UDP_RECV_TASK_TIME_INTERVAL 50
 
 // M5Stack PIN CoreS3

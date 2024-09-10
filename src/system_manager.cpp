@@ -164,8 +164,6 @@ void SystemManager::cmd_executor() {
 
         system_state_->act_cmd_type = cmd.cmd_code.cmd_type;
 
-        is_connected_udp = true;
-
         switch (cmd.cmd_code.cmd_type) {
             case basic_m5stack_cmd_list::CHANGE_SM_READY:
                 if (system_state_->emergency_stop_switch_for_control_task ||
@@ -218,6 +216,20 @@ void SystemManager::cmd_executor() {
                 break;
             case basic_m5stack_cmd_list::RESET_ALERT:
                 system_state_->is_occured_warning_ = false;
+                break;
+            case basic_m5stack_cmd_list::CONNECT_CAN:
+                if (system_state_data.state_code.state_machine !=
+                    node_state_machine::READY) {
+                    break;
+                }
+                ctrl_cmd_->cmd_stack_.push(cmd);
+                break;
+            case basic_m5stack_cmd_list::DISCONNECT_CAN:
+                if (system_state_data.state_code.state_machine !=
+                    node_state_machine::READY) {
+                    break;
+                }
+                ctrl_cmd_->cmd_stack_.push(cmd);
                 break;
             case basic_m5stack_cmd_list::CHANGE_CONTROLLED_SRV_ID:
                 if (system_state_data.state_code.state_machine !=
@@ -275,6 +287,30 @@ bool SystemManager::check_force_stop() {
 
 node_state_machine SystemManager::check_state_machine() {
     return system_state_data.state_code.state_machine;
+}
+
+void SystemManager::set_cmd_connect_can(
+    connected_can_switch connected_can_switch_) {
+    st_node_cmd cmd;
+
+    if (system_state_data.state_code.state_machine !=
+        node_state_machine::READY) {
+        return;
+    }
+
+    if (connected_can_switch_ == connected_can_switch::CONNECT) {
+        cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::CONNECT_CAN;
+    } else {
+        cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::DISCONNECT_CAN;
+    }
+
+    cmd.cmd_code.data_size = 0;
+    cmd.cmd_code.cmd_id = 0;
+    cmd.cmd_code.is_sys_cmd = false;
+    cmd.cmd_code.is_used_msgpack = false;
+    cmd.cmd_code.priority = 0;
+
+    node_cmd_->cmd_stack_.push(cmd);
 }
 
 void SystemManager::set_cmd_change_state_machine(
@@ -473,6 +509,10 @@ void SystemManager::update_manual_operating() {
                     manual_operating_state_.mode =
                         manual_operating_mode::CHANGE_SM;
                     break;
+                // case manual_operating_mode::CONNECT_CAN:
+                //     manual_operating_state_.mode =
+                //         manual_operating_mode::CHANGE_SM;
+                //     break;
                 case manual_operating_mode::CHANGE_SM:
                     manual_operating_state_.mode =
                         manual_operating_mode::CHANGE_SERVO_ID;
@@ -521,6 +561,9 @@ void SystemManager::update_manual_operating() {
                 case manual_operating_mode::CHANGE_SM:
                     manual_operating_state_.mode = manual_operating_mode::NONE;
                     break;
+                // case manual_operating_mode::CONNECT_CAN:
+                //     manual_operating_state_.mode =
+                //     manual_operating_mode::NONE; break;
                 default:
                     break;
             }
@@ -532,6 +575,23 @@ void SystemManager::update_manual_operating() {
     if (manual_operating_state_.act_phase ==
         manual_operating_phase::VALUE_CHANGE) {
         switch (manual_operating_state_.mode) {
+                /*
+                case manual_operating_mode::CONNECT_CAN:
+                    if (manual_operating_state_.act_encoder_value >
+                        manual_operating_state_.encoder_offest + 1) {
+                        // command stackに命令を追加
+                        set_cmd_connect_can(connected_can_switch::CONNECT);
+                        manual_operating_state_.encoder_offest =
+                            manual_operating_state_.act_encoder_value;
+                    } else if (manual_operating_state_.act_encoder_value <
+                               manual_operating_state_.encoder_offest - 1) {
+                        // command stackに命令を追加
+                        set_cmd_connect_can(connected_can_switch::DISCONNECT);
+                        manual_operating_state_.encoder_offest =
+                            manual_operating_state_.act_encoder_value;
+                    }
+                    break;
+                */
             case manual_operating_mode::CHANGE_SM:
                 if (manual_operating_state_.act_encoder_value >
                     manual_operating_state_.encoder_offest + 1) {
@@ -648,7 +708,7 @@ void SystemManager::update_manual_operating() {
                                 set_cmd_position_control(
                                     control_state_->servo_id,
                                     control_state_->act_joint_position +
-                                        0.005 * diff);
+                                        0.05 * diff);
                             }
                             manual_operating_state_.encoder_offest =
                                 manual_operating_state_.act_encoder_value;
@@ -668,7 +728,7 @@ void SystemManager::update_manual_operating() {
                                 set_cmd_velocity_control(
                                     control_state_->servo_id,
                                     control_state_->cmd_joint_velocity +
-                                        0.02 * diff);
+                                        0.05 * diff);
                             }
                             manual_operating_state_.encoder_offest =
                                 manual_operating_state_.act_encoder_value;
@@ -688,7 +748,7 @@ void SystemManager::update_manual_operating() {
                                 set_cmd_torque_control(
                                     control_state_->servo_id,
                                     control_state_->cmd_joint_torque +
-                                        0.02 * diff);
+                                        0.002 * diff);
                             }
                             manual_operating_state_.encoder_offest =
                                 manual_operating_state_.act_encoder_value;
@@ -745,35 +805,34 @@ void SystemManager::updateDisplay() {
     }
     // 1.2 System Status
     canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-    canvas->printf(">> System Status\r\n");
-
     if (manual_operating_state_.mode == manual_operating_mode::CHANGE_SM &&
         manual_operating_state_.act_phase ==
             manual_operating_phase::VALUE_CHANGE &&
         display_blink_cnt % 5 == 0) {
-        canvas->printf("SM: \r\n");
+        canvas->printf(">> System Status \t SM: \r\n");
     } else {
         switch (system_state_data.state_code.state_machine) {
             case node_state_machine::INITIALIZING:
-                canvas->printf("SM: Initializing\r\n");
+                canvas->printf(">> System Status \t SM: Initializing\r\n");
                 break;
             case node_state_machine::READY:
-                canvas->printf("SM: Ready\r\n");
+                canvas->printf(">> System Status \t SM: Ready\r\n");
                 break;
             case node_state_machine::STABLE:
-                canvas->printf("SM: Stable\r\n");
+                canvas->printf(">> System Status \t SM: Stable\r\n");
                 break;
             case node_state_machine::FORCE_STOP:
                 if (display_heart_beat) {
-                    canvas->printf("SM: Force Stop\r\n");
+                    canvas->printf(">> System Status \t SM: Force Stop\r\n");
                 } else {
-                    canvas->printf("SM: \r\n");
+                    canvas->printf(">> System Status \t SM: \r\n");
                 }
                 break;
             default:
                 break;
         }
     }
+    /*
     if (system_state_->emergency_stop_switch_for_control_task) {
         canvas->printf("EMS:ON\r\n");
     } else {
@@ -787,6 +846,7 @@ void SystemManager::updateDisplay() {
         canvas->printf("Encoder: OFF \t Val: %d\r\n",
                        system_state_->encoder_button_value);
     }
+    */
 
     canvas->printf("Ave: %d ms\t Max: %d ms\r\n",
                    system_state_->ave_calc_time_of_main_task,
@@ -794,38 +854,40 @@ void SystemManager::updateDisplay() {
 
     // Manual Operating
     canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-    canvas->printf("Manual Operating\r\n");
     if (manual_operating_state_.act_phase ==
             manual_operating_phase::MODE_CHANGE &&
         display_blink_cnt % 5 == 0) {
-        canvas->printf("Mode: \r\n");
+        canvas->printf("Manual OpMode: \r\n");
     } else {
         switch (manual_operating_state_.mode) {
             case manual_operating_mode::NONE:
-                canvas->printf("Mode: NONE\r\n");
+                canvas->printf("Manual OpMode: NONE\r\n");
                 break;
+            // case manual_operating_mode::CONNECT_CAN:
+            //     canvas->printf("Manual OpMode: CONNECT_CAN\r\n");
+            //     break;
             case manual_operating_mode::CHANGE_SM:
-                canvas->printf("Mode: CHANGE_SM\r\n");
+                canvas->printf("Manual OpMode: CHANGE_SM\r\n");
                 break;
             case manual_operating_mode::CHANGE_SERVO_ID:
-                canvas->printf("Mode: CHANGE_SRV_ID\r\n");
+                canvas->printf("Manual OpMode: CHANGE_SRV_ID\r\n");
                 break;
             case manual_operating_mode::CHANGE_SERVO_POWER:
-                canvas->printf("Mode: CHANGE_SRV_POWER\r\n");
+                canvas->printf("Manual OpMode: CHANGE_SRV_POWER\r\n");
                 break;
             case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
-                canvas->printf("Mode: CHANGE_SRV_CTRLMODE\r\n");
+                canvas->printf("Manual OpMode: CHANGE_SRV_CTRLMODE\r\n");
                 break;
             case manual_operating_mode::CMD_SERVO_CONTROL:
-                canvas->printf("Mode: CMD_SRV_CONTROL\r\n");
+                canvas->printf("Manual OpMode: CMD_SRV_CONTROL\r\n");
                 break;
             default:
                 break;
         }
     }
     // << END Manual Operating
-    canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-    canvas->printf("Recent Recv Cmd: %d \r\n", system_state_->act_cmd_type);
+    // canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+    // canvas->printf("Recent Recv Cmd: %d \r\n", system_state_->act_cmd_type);
 
     // 1.3 Control Status
     canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
@@ -844,6 +906,20 @@ void SystemManager::updateDisplay() {
         }
 
         canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+        if (manual_operating_state_.mode ==
+                manual_operating_mode::CONNECT_CAN &&
+            manual_operating_state_.act_phase ==
+                manual_operating_phase::VALUE_CHANGE &&
+            display_blink_cnt % 5 == 0) {
+            canvas->printf("CAN: \r\n");
+        } else {
+            if (control_state_->act_can_connection_status) {
+                canvas->printf("CAN: Connected\r\n");
+            } else {
+                canvas->printf("CAN: Disconnected\r\n");
+            }
+        }
+
         if (manual_operating_state_.mode ==
                 manual_operating_mode::CHANGE_SERVO_ID &&
             manual_operating_state_.act_phase ==
@@ -894,11 +970,18 @@ void SystemManager::updateDisplay() {
         }
 
         if (control_state_->is_init_joint_pos) {
-            canvas->printf("Joint Pos: %.3f \t Vel: %.2f \t Trq: %.3f \r\n",
+            canvas->printf("Init Joint: True\r\n");
+        } else {
+            canvas->printf("Init Joint: False\r\n");
+        }
+
+        if (control_state_->is_init_joint_pos ||
+            control_state_->act_can_connection_status) {
+            canvas->printf("ActJ Pos: %.3f \t Vel: %.2f \t Trq: %.3f \r\n",
                            control_state_->act_joint_position,
                            control_state_->act_joint_velocity,
                            control_state_->act_joint_torque);
-            canvas->printf("Cmd Pos: %.3f \t Vel: %.2f \t Trq: %.3f \r\n",
+            canvas->printf("CmdJ Pos: %.3f \t Vel: %.2f \t Trq: %.3f \r\n",
                            control_state_->cmd_joint_position,
                            control_state_->cmd_joint_velocity,
                            control_state_->cmd_joint_torque);
@@ -919,7 +1002,7 @@ void SystemManager::updateDisplay() {
                        system_state_->udp_send_num);
     } else {
         canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-        canvas->printf("LAN Status\r\n");
+        canvas->printf(">> LAN Status\r\n");
         canvas->printf("...Not Exist...\r\n");
     }
 
@@ -977,6 +1060,9 @@ bool SystemManager::check_connected_udp() {
 }
 
 void SystemManager::set_udp_recv_packet(uint8_t* packetBuffer) {
+    if (!is_connected_udp) {
+        is_connected_udp = true;
+    }
     node_cmd_->cmd_stack_.push(*(st_node_cmd*)packetBuffer);
     system_state_->udp_recv_num++;
 }
