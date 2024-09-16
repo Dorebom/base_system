@@ -53,6 +53,7 @@ private:
     bool is_connected_udp = false;
     bool is_requested_state_at_once = false;
     bool is_streaming_state = false;
+    bool is_streaming_state_for_logging = false;
     // >> EMS Button
     bool prev_emergency_stop_switch_for_control_task = false;
 
@@ -100,6 +101,9 @@ private:
     void set_udp_send_cmd(st_node_cmd cmd);  // TODO node class への移植
     void reset_udp_send_packet(
         bool discard_unsent_data);  // TODO node class への移植
+    // >> B Node
+    void set_cmd_start_logging();
+    void set_cmd_stop_logging();
 
 public:
     SystemManager();
@@ -148,7 +152,7 @@ public:
     bool check_encoder_button_flag();
     // Display
     void set_canvas(M5Canvas* canvas_);
-    void updateDisplay();
+    void update_display();
     // LAN
     void set_initialized_lan();
     bool check_init_lan();

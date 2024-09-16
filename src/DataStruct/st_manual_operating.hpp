@@ -35,6 +35,7 @@ struct manual_operating_state
     bool act_encoder_button_flag_double_pressed;
     int act_encoder_value;
     int encoder_offest;
+    uint8_t ctrl_level;
 
     manual_operating_state(/* args */) {
         mode = manual_operating_mode::NONE;
@@ -45,5 +46,6 @@ struct manual_operating_state
         first_pressed_time = 0;
         act_encoder_button_flag_double_pressed = false;
         encoder_offest = 0;
+        ctrl_level = 1;
     }
 };

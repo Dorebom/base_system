@@ -33,6 +33,9 @@ enum class basic_m5stack_cmd_list : int
     SERVO_VELOCITY_CONTROL,
     SERVO_TORQUE_CONTROL,
 
+    STRAT_LOGGING,
+    STOP_LOGGING,
+
     PERIOD_CMD  // この行は削除しないこと
 };
 

@@ -69,10 +69,11 @@ BoardType board_type = BoardType::M5STACK_CORES3;
 // CAM_VSYNC        46
 
 // I2C
-#define UNIT_SCALES_DEFAULT_ADDR  0x26
-#define UNIT_ENCODER_DEFAULT_ADDR 0x40
+#define UNIT_SCALES_DEFAULT_ADDR      0x26
+#define UNIT_ENCODER_DEFAULT_ADDR     0x40
+#define UNIT_TEMPERATURE_DEFAULT_ADDR 0x44
 
-// UDP and LAN
+//  UDP and LAN
 #define UDP_PORT_RECV 50001
 #define UDP_PORT_SEND 50002
 IPAddress destination_ip(192, 168, 8, 116);
@@ -181,7 +182,7 @@ static void main_task(void *arg) {
 
         // 2. Display
         if (time_cnt % heart_beat_interval == 0) {
-            sys_manager.updateDisplay();
+            sys_manager.update_display();
             time_cnt = 0;
             // M5DEV_LOGI("Display updated");
         }

@@ -17,6 +17,9 @@ SystemManager::SystemManager() {
     control_state_ = (ControlState*)control_state_data.data;
 }
 
+SystemManager::~SystemManager() {
+}
+
 void SystemManager::set_udp_send_state(st_node_state state) {
     uint8_t stack_marker_size;
     int stack_data_size =
@@ -109,7 +112,26 @@ void SystemManager::reset_udp_send_packet(bool discard_unsent_data) {
     }
 }
 
-SystemManager::~SystemManager() {
+void SystemManager::set_cmd_start_logging() {
+    st_node_cmd res_cmd;
+    res_cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::STRAT_LOGGING;
+    res_cmd.cmd_code.data_size = 0;
+    res_cmd.cmd_code.cmd_id = 0;
+    res_cmd.cmd_code.is_sys_cmd = false;
+    res_cmd.cmd_code.is_used_msgpack = false;
+    res_cmd.cmd_code.priority = 0;
+    set_udp_send_cmd(res_cmd);
+}
+
+void SystemManager::set_cmd_stop_logging() {
+    st_node_cmd res_cmd;
+    res_cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::STOP_LOGGING;
+    res_cmd.cmd_code.data_size = 0;
+    res_cmd.cmd_code.cmd_id = 0;
+    res_cmd.cmd_code.is_sys_cmd = false;
+    res_cmd.cmd_code.is_used_msgpack = false;
+    res_cmd.cmd_code.priority = 0;
+    set_udp_send_cmd(res_cmd);
 }
 
 void SystemManager::set_initialized_main_task() {
@@ -269,6 +291,22 @@ void SystemManager::cmd_executor() {
                     break;
                 }
                 ctrl_cmd_->cmd_stack_.push(cmd);
+                break;
+            case basic_m5stack_cmd_list::STRAT_LOGGING:
+                if (is_streaming_state) {
+                    is_streaming_state_for_logging = false;
+                } else {
+                    is_streaming_state_for_logging = true;
+                    is_streaming_state = true;
+                }
+                set_cmd_start_logging();
+                break;
+            case basic_m5stack_cmd_list::STOP_LOGGING:
+                if (is_streaming_state_for_logging) {
+                    is_streaming_state_for_logging = false;
+                    is_streaming_state = false;
+                }
+                set_cmd_stop_logging();
                 break;
             default:
                 is_connected_udp = false;
@@ -689,73 +727,94 @@ void SystemManager::update_manual_operating() {
                 }
                 break;
             case manual_operating_mode::CMD_SERVO_CONTROL:
-                diff = manual_operating_state_.act_encoder_value -
-                       manual_operating_state_.encoder_offest;
-                switch (control_state_->ctrl_mode) {
-                    case basic_servo_ctrl_cmd_list::STAY:
-                        break;
-                    case basic_servo_ctrl_cmd_list::POSITION:
-                        // 偏差
-                        if (std::abs(diff) > 1) {
-                            if (std::abs(diff) > 50) {
-                                if (diff > 0) {
-                                    diff = 50;
-                                } else {
-                                    diff = -50;
-                                }
-                            }
-                            if (control_state_->is_power_on) {
-                                set_cmd_position_control(
-                                    control_state_->servo_id,
-                                    control_state_->act_joint_position +
-                                        0.05 * diff);
-                            }
-                            manual_operating_state_.encoder_offest =
-                                manual_operating_state_.act_encoder_value;
+                if (manual_operating_state_.act_encoder_button_flag_pressed) {
+                    // ctrl_levelを変更
+                    if (manual_operating_state_.act_encoder_value >
+                        manual_operating_state_.encoder_offest + 1) {
+                        if (manual_operating_state_.ctrl_level < 10) {
+                            manual_operating_state_.ctrl_level++;
                         }
-                        break;
-                    case basic_servo_ctrl_cmd_list::VELOCITY:
-                        // 偏差
-                        if (std::abs(diff) > 1) {
-                            if (std::abs(diff) > 50) {
-                                if (diff > 0) {
-                                    diff = 50;
-                                } else {
-                                    diff = -50;
-                                }
-                            }
-                            if (control_state_->is_power_on) {
-                                set_cmd_velocity_control(
-                                    control_state_->servo_id,
-                                    control_state_->cmd_joint_velocity +
-                                        0.05 * diff);
-                            }
-                            manual_operating_state_.encoder_offest =
-                                manual_operating_state_.act_encoder_value;
+                        manual_operating_state_.encoder_offest =
+                            manual_operating_state_.act_encoder_value;
+                    } else if (manual_operating_state_.act_encoder_value <
+                               manual_operating_state_.encoder_offest - 1) {
+                        if (manual_operating_state_.ctrl_level > 1) {
+                            manual_operating_state_.ctrl_level--;
                         }
-                        break;
-                    case basic_servo_ctrl_cmd_list::TORQUE:
-                        // 偏差
-                        if (std::abs(diff) > 1) {
-                            if (std::abs(diff) > 50) {
-                                if (diff > 0) {
-                                    diff = 50;
-                                } else {
-                                    diff = -50;
+                        manual_operating_state_.encoder_offest =
+                            manual_operating_state_.act_encoder_value;
+                    }
+                } else {
+                    diff = manual_operating_state_.act_encoder_value -
+                           manual_operating_state_.encoder_offest;
+                    diff *= manual_operating_state_.ctrl_level;
+
+                    switch (control_state_->ctrl_mode) {
+                        case basic_servo_ctrl_cmd_list::STAY:
+                            break;
+                        case basic_servo_ctrl_cmd_list::POSITION:
+                            // 偏差
+                            if (std::abs(diff) > 1) {
+                                if (std::abs(diff) > 50) {
+                                    if (diff > 0) {
+                                        diff = 50;
+                                    } else {
+                                        diff = -50;
+                                    }
                                 }
+                                if (control_state_->is_power_on) {
+                                    set_cmd_position_control(
+                                        control_state_->servo_id,
+                                        control_state_->act_joint_position +
+                                            0.05 * diff);
+                                }
+                                manual_operating_state_.encoder_offest =
+                                    manual_operating_state_.act_encoder_value;
                             }
-                            if (control_state_->is_power_on) {
-                                set_cmd_torque_control(
-                                    control_state_->servo_id,
-                                    control_state_->cmd_joint_torque +
-                                        0.002 * diff);
+                            break;
+                        case basic_servo_ctrl_cmd_list::VELOCITY:
+                            // 偏差
+                            if (std::abs(diff) > 1) {
+                                if (std::abs(diff) > 50) {
+                                    if (diff > 0) {
+                                        diff = 50;
+                                    } else {
+                                        diff = -50;
+                                    }
+                                }
+                                if (control_state_->is_power_on) {
+                                    set_cmd_velocity_control(
+                                        control_state_->servo_id,
+                                        control_state_->cmd_joint_velocity +
+                                            0.02 * diff);
+                                }
+                                manual_operating_state_.encoder_offest =
+                                    manual_operating_state_.act_encoder_value;
                             }
-                            manual_operating_state_.encoder_offest =
-                                manual_operating_state_.act_encoder_value;
-                        }
-                        break;
-                    default:
-                        break;
+                            break;
+                        case basic_servo_ctrl_cmd_list::TORQUE:
+                            // 偏差
+                            if (std::abs(diff) > 1) {
+                                if (std::abs(diff) > 50) {
+                                    if (diff > 0) {
+                                        diff = 50;
+                                    } else {
+                                        diff = -50;
+                                    }
+                                }
+                                if (control_state_->is_power_on) {
+                                    set_cmd_torque_control(
+                                        control_state_->servo_id,
+                                        control_state_->cmd_joint_torque +
+                                            0.001 * diff);
+                                }
+                                manual_operating_state_.encoder_offest =
+                                    manual_operating_state_.act_encoder_value;
+                            }
+                            break;
+                        default:
+                            break;
+                    }
                 }
             default:
                 break;
@@ -768,7 +827,7 @@ void SystemManager::set_canvas(M5Canvas* canvas_) {
     is_init_canvas = true;
 }
 
-void SystemManager::updateDisplay() {
+void SystemManager::update_display() {
     // if (!is_init_canvas || !is_init_all) {
     if (!is_init_canvas) {
         return;
@@ -885,6 +944,12 @@ void SystemManager::updateDisplay() {
                 break;
         }
     }
+    canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+    canvas->print("Ctrl Level: ");
+    for (int i = 0; i < manual_operating_state_.ctrl_level; i++) {
+        canvas->print("##");
+    }
+    canvas->print("\r\n");
     // << END Manual Operating
     // canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
     // canvas->printf("Recent Recv Cmd: %d \r\n", system_state_->act_cmd_type);
@@ -900,6 +965,13 @@ void SystemManager::updateDisplay() {
     if (is_init_ctrl_task) {
         if (control_state_->is_init_scale) {
             canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+            canvas->printf("Weight: %f\r\n", control_state_->sensor_weight);
+            canvas->printf("Raw ADC: %d\r\n",
+                           control_state_->sensor_weight_raw_adc);
+        } else {
+            canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+            //canvas->printf("Weight: Not Init\r\n");
+            //canvas->printf("Raw ADC: Not Init\r\n");
             canvas->printf("Weight: %f\r\n", control_state_->sensor_weight);
             canvas->printf("Raw ADC: %d\r\n",
                            control_state_->sensor_weight_raw_adc);

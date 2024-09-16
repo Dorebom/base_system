@@ -405,8 +405,14 @@ void ControlManager::set_servo_ctrl_mode(uint8_t servo_id,
             case basic_servo_ctrl_cmd_list::STAY:
                 break;
             case basic_servo_ctrl_cmd_list::POSITION:
+                // 位置指令のリセット
                 state_.cmd_joint_position = state_.act_joint_position;
                 position_control(servo_id, state_.act_joint_position);
+                // 速度制限の設定
+                cybergear_driver.set_limit_spd(servo_id, 10.0, msg);
+                send_can_packet_task(msg);
+                recv_can();
+                // 位置制御モードへ変更
                 cybergear_driver.set_position_mode(servo_id, msg);
                 motor_status[servo_id].ctrl_mode = MODE_POSITION;
                 break;
@@ -505,7 +511,7 @@ bool ControlManager::begin_scale(TwoWire& wire, uint8_t addr) {
     M5DEV_LOGI("Scale found");
     status_.is_init_scale = true;
 
-    scale.setLEDColor(0x001000);
+    scale.setLEDColor(0x100000);
     // scale.setLPFilter(50);
     // scale.setAvgFilter(10);
     scale.setEmaFilter(50);
@@ -528,7 +534,7 @@ float ControlManager::get_weight() {
     } else {
         scale.setLEDColor(0x000010);
     }
-    M5DEV_LOGI("Scale Gap Value: %f", scale.getGapValue());
+    // M5DEV_LOGI("Scale weight Value: %f", scale.getWeight());
     float weight = scale.getWeight();
     state_.sensor_weight = weight;
     return weight;
