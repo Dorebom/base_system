@@ -11,6 +11,7 @@
 #include "Device/xiaomi_cybergear_driver.hpp"
 #include "driver/twai.h"
 //
+#include "control_parameter.hpp"
 #include "st_control_state.hpp"
 
 #define MAX_CTRL_CMD_DATA_SIZE  200

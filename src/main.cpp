@@ -35,9 +35,13 @@ BoardType board_type = BoardType::M5STACK_CORES3;
 #define UDP_RECV_TASK_PRIORITY    1
 #define CTRL_TASK_PRIORITY        2
 
-#define CTRL_TASK_TIME_INTERVAL     5
+#define CTRL_TASK_TIME_INTERVAL     2
 #define MAIN_TASK_TIME_INTERVAL     50
 #define UDP_RECV_TASK_TIME_INTERVAL 50
+
+#define MAIN_STACK_DEPTH     8192
+#define CTRL_STACK_DEPTH     4096
+#define UDP_RECV_STACK_DEPTH 4096
 
 // M5Stack PIN CoreS3
 // LAN Module RST    0
@@ -433,13 +437,14 @@ void setup(void) {
 
     // 7. Initialize THREAD
     // Make thread for receiving UDP packet
-    xTaskCreate(udp_receive_task, "UDP_RECV_TASK", 4096, NULL,
+    xTaskCreate(udp_receive_task, "UDP_RECV_TASK", UDP_RECV_STACK_DEPTH, NULL,
                 UDP_RECV_TASK_PRIORITY, NULL);
     // Make thread for main task
-    xTaskCreate(main_task, "MAIN_TASK", 4096, NULL, MAIN_SYSTEM_TASK_PRIORITY,
-                NULL);
+    xTaskCreate(main_task, "MAIN_TASK", MAIN_STACK_DEPTH, NULL,
+                MAIN_SYSTEM_TASK_PRIORITY, NULL);
     // Make thread for control task
-    xTaskCreate(ctrl_task, "CTRL_TASK", 4096, NULL, CTRL_TASK_PRIORITY, NULL);
+    xTaskCreate(ctrl_task, "CTRL_TASK", CTRL_STACK_DEPTH, NULL,
+                CTRL_TASK_PRIORITY, NULL);
     //
     // M5DEV_LOGI("Thread initialized");
     // <--END 7. Initialize THREAD

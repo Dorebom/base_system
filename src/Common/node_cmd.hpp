@@ -33,7 +33,7 @@ enum class basic_m5stack_cmd_list : int
     SERVO_VELOCITY_CONTROL,
     SERVO_TORQUE_CONTROL,
 
-    STRAT_LOGGING,
+    START_LOGGING,
     STOP_LOGGING,
 
     PERIOD_CMD  // この行は削除しないこと
@@ -74,6 +74,14 @@ struct st_node_cmd
     std::uint8_t data[MAX_NODE_CMD_DATA_SIZE];
     st_node_cmd(/* args */) {
         cmd_code = common_cmd_code();
+    }
+    void default_init() {
+        cmd_code.is_used_msgpack = false;
+        cmd_code.is_sys_cmd = false;
+        cmd_code.priority = 0;
+        cmd_code.source = 0;
+        cmd_code.data_size = 0;
+        cmd_code.cmd_id = 0;
     }
 };
 

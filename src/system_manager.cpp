@@ -13,6 +13,9 @@ SystemManager::SystemManager() {
     system_state_data.state_code.node_id = 1;
     control_state_data.state_code.node_id = 2;
 
+    system_state_data.state_code.data_size = sizeof(SystemState);
+    control_state_data.state_code.data_size = sizeof(ControlState);
+
     system_state_ = (SystemState*)system_state_data.data;
     control_state_ = (ControlState*)control_state_data.data;
 }
@@ -26,7 +29,7 @@ void SystemManager::set_udp_send_state(st_node_state state) {
         state.state_code.data_size + sizeof(common_state_code);
 
     if (stack_data_size > udp_send_packet_.max_stack_size_at_once) {
-        M5_LOGE("Stack Data Size Over");
+        M5_LOGE("(STATE)Stack Data Size Over %d", stack_data_size);
         return;
     }
 
@@ -40,20 +43,20 @@ void SystemManager::set_udp_send_state(st_node_state state) {
     }
 
     if (stack_marker_size >
-        udp_send_packet_.max_stack_marker_size - recent_stack_marker_size) {
-        M5_LOGW("Stack Marker Size Over");
+        udp_send_packet_.max_stack_marker_size - udp_send_packet_.stack_num) {
+        M5_LOGW("(STATE)Stack Marker Size Over %d", stack_marker_size);
         is_unsent_data = true;
         memcpy(unsent_data, &state, stack_data_size);
         unsent_stack_marker = stack_marker_size;
         return;
     } else {
-        memcpy(&udp_send_packet_.data[recent_stack_marker_size *
+        memcpy(&udp_send_packet_.data[udp_send_packet_.stack_num *
                                       udp_send_packet_.one_stack_size],
                &state, stack_data_size);
         udp_send_packet_.stack_marker[udp_send_packet_.stack_marker_num] =
             (int8_t)stack_marker_size;
         // stateの場合は、プラスをつける
-        recent_stack_marker_size += stack_marker_size;
+        udp_send_packet_.stack_num += stack_marker_size;
         udp_send_packet_.stack_marker_num++;
     }
 }
@@ -63,7 +66,7 @@ void SystemManager::set_udp_send_cmd(st_node_cmd cmd) {
     int stack_data_size = cmd.cmd_code.data_size + sizeof(common_cmd_code);
 
     if (stack_data_size > udp_send_packet_.max_stack_size_at_once) {
-        M5_LOGE("Stack Data Size Over");
+        M5_LOGE("(CMD)Stack Data Size Over %d", stack_data_size);
         return;
     }
 
@@ -77,27 +80,27 @@ void SystemManager::set_udp_send_cmd(st_node_cmd cmd) {
     }
 
     if (stack_marker_size >
-        udp_send_packet_.max_stack_marker_size - recent_stack_marker_size) {
-        M5_LOGW("Stack Marker Size Over");
+        udp_send_packet_.max_stack_marker_size - udp_send_packet_.stack_num) {
+        M5_LOGW("(CMD)Stack Marker Size Over (marker size)%d, (recent_sum)%d",
+                stack_marker_size, udp_send_packet_.stack_num);
         is_unsent_data = true;
         memcpy(unsent_data, &cmd, stack_data_size);
         unsent_stack_marker = -stack_marker_size;
         return;
     } else {
-        udp_send_packet_.stack_marker_num++;
-        memcpy(&udp_send_packet_.data[recent_stack_marker_size *
+        memcpy(&udp_send_packet_.data[udp_send_packet_.stack_num *
                                       udp_send_packet_.one_stack_size],
                &cmd, stack_data_size);
         udp_send_packet_.stack_marker[udp_send_packet_.stack_marker_num] =
             -stack_marker_size;
         // commandの場合は、マイナスをつける
-        recent_stack_marker_size += stack_marker_size;
+        udp_send_packet_.stack_num += stack_marker_size;
         udp_send_packet_.stack_marker_num++;
     }
 }
 
 void SystemManager::reset_udp_send_packet(bool discard_unsent_data) {
-    recent_stack_marker_size = 0;
+    udp_send_packet_.stack_num = 0;
     //
     udp_send_packet_.stack_marker_num = 0;
     memset(udp_send_packet_.stack_marker, 0, MAX_UDP_STACK_MARKER_NUM);
@@ -106,32 +109,10 @@ void SystemManager::reset_udp_send_packet(bool discard_unsent_data) {
         memcpy(&udp_send_packet_.data[0], unsent_data,
                std::abs(unsent_stack_marker) * udp_send_packet_.one_stack_size);
         udp_send_packet_.stack_marker[0] = unsent_stack_marker;
-        recent_stack_marker_size += std::abs(unsent_stack_marker);
+        udp_send_packet_.stack_num += std::abs(unsent_stack_marker);
         udp_send_packet_.stack_marker_num++;
         is_unsent_data = false;
     }
-}
-
-void SystemManager::set_cmd_start_logging() {
-    st_node_cmd res_cmd;
-    res_cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::STRAT_LOGGING;
-    res_cmd.cmd_code.data_size = 0;
-    res_cmd.cmd_code.cmd_id = 0;
-    res_cmd.cmd_code.is_sys_cmd = false;
-    res_cmd.cmd_code.is_used_msgpack = false;
-    res_cmd.cmd_code.priority = 0;
-    set_udp_send_cmd(res_cmd);
-}
-
-void SystemManager::set_cmd_stop_logging() {
-    st_node_cmd res_cmd;
-    res_cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::STOP_LOGGING;
-    res_cmd.cmd_code.data_size = 0;
-    res_cmd.cmd_code.cmd_id = 0;
-    res_cmd.cmd_code.is_sys_cmd = false;
-    res_cmd.cmd_code.is_used_msgpack = false;
-    res_cmd.cmd_code.priority = 0;
-    set_udp_send_cmd(res_cmd);
 }
 
 void SystemManager::set_initialized_main_task() {
@@ -292,21 +273,19 @@ void SystemManager::cmd_executor() {
                 }
                 ctrl_cmd_->cmd_stack_.push(cmd);
                 break;
-            case basic_m5stack_cmd_list::STRAT_LOGGING:
-                if (is_streaming_state) {
-                    is_streaming_state_for_logging = false;
-                } else {
-                    is_streaming_state_for_logging = true;
-                    is_streaming_state = true;
+            case basic_m5stack_cmd_list::START_LOGGING:
+                if (is_logging || !is_connected_udp) {
+                    break;
                 }
-                set_cmd_start_logging();
+                set_res_cmd_start_logging();
+                is_logging = true;
                 break;
             case basic_m5stack_cmd_list::STOP_LOGGING:
-                if (is_streaming_state_for_logging) {
-                    is_streaming_state_for_logging = false;
-                    is_streaming_state = false;
+                if (!is_logging || !is_connected_udp) {
+                    break;
                 }
-                set_cmd_stop_logging();
+                set_res_cmd_stop_logging();
+                is_logging = false;
                 break;
             default:
                 is_connected_udp = false;
@@ -330,6 +309,7 @@ node_state_machine SystemManager::check_state_machine() {
 void SystemManager::set_cmd_connect_can(
     connected_can_switch connected_can_switch_) {
     st_node_cmd cmd;
+    cmd.default_init();
 
     if (system_state_data.state_code.state_machine !=
         node_state_machine::READY) {
@@ -342,18 +322,13 @@ void SystemManager::set_cmd_connect_can(
         cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::DISCONNECT_CAN;
     }
 
-    cmd.cmd_code.data_size = 0;
-    cmd.cmd_code.cmd_id = 0;
-    cmd.cmd_code.is_sys_cmd = false;
-    cmd.cmd_code.is_used_msgpack = false;
-    cmd.cmd_code.priority = 0;
-
     node_cmd_->cmd_stack_.push(cmd);
 }
 
 void SystemManager::set_cmd_change_state_machine(
     node_state_machine state_machine) {
     st_node_cmd cmd;
+    cmd.default_init();
 
     // すでに同じ状態になっている場合は、何もしない
     if (state_machine == system_state_data.state_code.state_machine) {
@@ -374,17 +349,13 @@ void SystemManager::set_cmd_change_state_machine(
         default:
             break;
     }
-    cmd.cmd_code.data_size = 0;
-    cmd.cmd_code.cmd_id = 0;
-    cmd.cmd_code.is_sys_cmd = false;
-    cmd.cmd_code.is_used_msgpack = false;
-    cmd.cmd_code.priority = 0;
 
     node_cmd_->cmd_stack_.push(cmd);
 }
 
 void SystemManager::set_cmd_change_servo_id(uint8_t servo_id) {
     st_node_cmd cmd;
+    cmd.default_init();
 
     if (system_state_data.state_code.state_machine !=
         node_state_machine::READY) {
@@ -397,10 +368,6 @@ void SystemManager::set_cmd_change_servo_id(uint8_t servo_id) {
     cmd_data->servo_id = servo_id;
 
     cmd.cmd_code.data_size = sizeof(cmd_change_controlled_servo_id);
-    cmd.cmd_code.cmd_id = 0;
-    cmd.cmd_code.is_sys_cmd = false;
-    cmd.cmd_code.is_used_msgpack = false;
-    cmd.cmd_code.priority = 0;
 
     node_cmd_->cmd_stack_.push(cmd);
 }
@@ -408,6 +375,7 @@ void SystemManager::set_cmd_change_servo_id(uint8_t servo_id) {
 void SystemManager::set_cmd_change_servo_power(uint8_t servo_id,
                                                bool is_power_on) {
     st_node_cmd cmd;
+    cmd.default_init();
 
     if (system_state_data.state_code.state_machine !=
         node_state_machine::STABLE) {
@@ -420,10 +388,6 @@ void SystemManager::set_cmd_change_servo_power(uint8_t servo_id,
     cmd_data->is_on = is_power_on;
 
     cmd.cmd_code.data_size = sizeof(cmd_change_servo_power);
-    cmd.cmd_code.cmd_id = 0;
-    cmd.cmd_code.is_sys_cmd = false;
-    cmd.cmd_code.is_used_msgpack = false;
-    cmd.cmd_code.priority = 0;
 
     node_cmd_->cmd_stack_.push(cmd);
 }
@@ -431,6 +395,7 @@ void SystemManager::set_cmd_change_servo_power(uint8_t servo_id,
 void SystemManager::set_cmd_change_servo_ctrl_mode(
     uint8_t servo_id, basic_servo_ctrl_cmd_list ctrl_mode) {
     st_node_cmd cmd;
+    cmd.default_init();
 
     if (system_state_data.state_code.state_machine ==
         node_state_machine::FORCE_STOP) {
@@ -444,10 +409,6 @@ void SystemManager::set_cmd_change_servo_ctrl_mode(
     cmd_data->ctrl_mode = ctrl_mode;
 
     cmd.cmd_code.data_size = sizeof(cmd_change_servo_ctrl_mode);
-    cmd.cmd_code.cmd_id = 0;
-    cmd.cmd_code.is_sys_cmd = false;
-    cmd.cmd_code.is_used_msgpack = false;
-    cmd.cmd_code.priority = 0;
 
     node_cmd_->cmd_stack_.push(cmd);
 }
@@ -455,6 +416,7 @@ void SystemManager::set_cmd_change_servo_ctrl_mode(
 void SystemManager::set_cmd_velocity_control(uint8_t servo_id,
                                              double velocity) {
     st_node_cmd cmd;
+    cmd.default_init();
 
     if (!control_state_->is_power_on) {
         return;
@@ -466,16 +428,13 @@ void SystemManager::set_cmd_velocity_control(uint8_t servo_id,
     cmd_data->velocity = velocity;
 
     cmd.cmd_code.data_size = sizeof(cmd_velocity_control);
-    cmd.cmd_code.cmd_id = 0;
-    cmd.cmd_code.is_sys_cmd = false;
-    cmd.cmd_code.is_used_msgpack = false;
-    cmd.cmd_code.priority = 0;
 
     node_cmd_->cmd_stack_.push(cmd);
 }
 
 void SystemManager::set_cmd_torque_control(uint8_t servo_id, double torque) {
     st_node_cmd cmd;
+    cmd.default_init();
 
     if (!control_state_->is_power_on) {
         return;
@@ -487,10 +446,6 @@ void SystemManager::set_cmd_torque_control(uint8_t servo_id, double torque) {
     cmd_data->torque = torque;
 
     cmd.cmd_code.data_size = sizeof(cmd_torque_control);
-    cmd.cmd_code.cmd_id = 0;
-    cmd.cmd_code.is_sys_cmd = false;
-    cmd.cmd_code.is_used_msgpack = false;
-    cmd.cmd_code.priority = 0;
 
     node_cmd_->cmd_stack_.push(cmd);
 }
@@ -498,6 +453,7 @@ void SystemManager::set_cmd_torque_control(uint8_t servo_id, double torque) {
 void SystemManager::set_cmd_position_control(uint8_t servo_id,
                                              double target_position) {
     st_node_cmd cmd;
+    cmd.default_init();
 
     if (!control_state_->is_power_on) {
         return;
@@ -509,12 +465,52 @@ void SystemManager::set_cmd_position_control(uint8_t servo_id,
     cmd_data->target_position = target_position;
 
     cmd.cmd_code.data_size = sizeof(cmd_position_control);
-    cmd.cmd_code.cmd_id = 0;
-    cmd.cmd_code.is_sys_cmd = false;
-    cmd.cmd_code.is_used_msgpack = false;
-    cmd.cmd_code.priority = 0;
 
     node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::set_cmd_start_logging() {
+    st_node_cmd cmd;
+    cmd.default_init();
+
+    cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::START_LOGGING;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+void SystemManager::set_cmd_stop_logging() {
+    st_node_cmd cmd;
+    cmd.default_init();
+
+    cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::STOP_LOGGING;
+
+    node_cmd_->cmd_stack_.push(cmd);
+}
+
+// RES CMD
+void SystemManager::set_res_cmd_start_logging() {
+    if (is_streaming_state) {
+        is_streaming_state_for_logging = false;
+    } else {
+        is_streaming_state_for_logging = true;
+        is_streaming_state = true;
+    }
+
+    st_node_cmd res_cmd;
+    res_cmd.default_init();
+    res_cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::START_LOGGING;
+    set_udp_send_cmd(res_cmd);
+}
+
+void SystemManager::set_res_cmd_stop_logging() {
+    if (is_streaming_state_for_logging) {
+        is_streaming_state_for_logging = false;
+        is_streaming_state = false;
+    }
+    st_node_cmd res_cmd;
+    res_cmd.default_init();
+    res_cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::STOP_LOGGING;
+    set_udp_send_cmd(res_cmd);
 }
 
 void SystemManager::update_manual_operating() {
@@ -567,6 +563,10 @@ void SystemManager::update_manual_operating() {
                     manual_operating_state_.mode =
                         manual_operating_mode::CMD_SERVO_CONTROL;
                     break;
+                case manual_operating_mode::CMD_SERVO_CONTROL:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CHANGE_LOGGING_MODE;
+                    break;
                 // 循環させない
                 // case manual_operating_mode::CMD_SERVO_CONTROL:
                 //    manual_operating_state_.mode =
@@ -580,6 +580,10 @@ void SystemManager::update_manual_operating() {
                    manual_operating_state_.encoder_offest - 1) {
             // command stackに命令を追加
             switch (manual_operating_state_.mode) {
+                case manual_operating_mode::CHANGE_LOGGING_MODE:
+                    manual_operating_state_.mode =
+                        manual_operating_mode::CMD_SERVO_CONTROL;
+                    break;
                 case manual_operating_mode::CMD_SERVO_CONTROL:
                     manual_operating_state_.mode =
                         manual_operating_mode::CHANGE_SERVO_CONTROL_MODE;
@@ -630,6 +634,25 @@ void SystemManager::update_manual_operating() {
                     }
                     break;
                 */
+            case manual_operating_mode::CHANGE_LOGGING_MODE:
+                if (manual_operating_state_.act_encoder_value >
+                    manual_operating_state_.encoder_offest + 1) {
+                    // command stackに命令を追加
+                    if (!is_logging) {
+                        set_cmd_start_logging();
+                    }
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                } else if (manual_operating_state_.act_encoder_value <
+                           manual_operating_state_.encoder_offest - 1) {
+                    // command stackに命令を追加
+                    if (is_logging) {
+                        set_cmd_stop_logging();
+                    }
+                    manual_operating_state_.encoder_offest =
+                        manual_operating_state_.act_encoder_value;
+                }
+                break;
             case manual_operating_mode::CHANGE_SM:
                 if (manual_operating_state_.act_encoder_value >
                     manual_operating_state_.encoder_offest + 1) {
@@ -766,7 +789,7 @@ void SystemManager::update_manual_operating() {
                                     set_cmd_position_control(
                                         control_state_->servo_id,
                                         control_state_->act_joint_position +
-                                            0.05 * diff);
+                                            0.005 * diff);
                                 }
                                 manual_operating_state_.encoder_offest =
                                     manual_operating_state_.act_encoder_value;
@@ -926,25 +949,46 @@ void SystemManager::update_display() {
             //     canvas->printf("Manual OpMode: CONNECT_CAN\r\n");
             //     break;
             case manual_operating_mode::CHANGE_SM:
-                canvas->printf("Manual OpMode: CHANGE_SM\r\n");
+                canvas->printf("Manual OpMode: CHANGE SM\r\n");
                 break;
             case manual_operating_mode::CHANGE_SERVO_ID:
-                canvas->printf("Manual OpMode: CHANGE_SRV_ID\r\n");
+                canvas->printf("Manual OpMode: CHANGE SRV ID\r\n");
                 break;
             case manual_operating_mode::CHANGE_SERVO_POWER:
-                canvas->printf("Manual OpMode: CHANGE_SRV_POWER\r\n");
+                canvas->printf("Manual OpMode: CHANGE SRV POWER\r\n");
                 break;
             case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
-                canvas->printf("Manual OpMode: CHANGE_SRV_CTRLMODE\r\n");
+                canvas->printf("Manual OpMode: CHANGE SRV CTRLMODE\r\n");
                 break;
             case manual_operating_mode::CMD_SERVO_CONTROL:
-                canvas->printf("Manual OpMode: CMD_SRV_CONTROL\r\n");
+                canvas->printf("Manual OpMode: CMD SRV CONTROL\r\n");
+                break;
+            case manual_operating_mode::CHANGE_LOGGING_MODE:
+                canvas->printf("Manual OpMode: CHANGE LOGGING MODE\r\n");
                 break;
             default:
                 break;
         }
     }
     canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+    if (manual_operating_state_.mode ==
+            manual_operating_mode::CHANGE_LOGGING_MODE &&
+        manual_operating_state_.act_phase ==
+            manual_operating_phase::VALUE_CHANGE &&
+        display_blink_cnt % 5 == 0) {
+        canvas->printf("Log: \r\n");
+    } else {
+        if (is_connected_udp) {
+            if (is_logging) {
+                canvas->printf("Log: ON\r\n");
+            } else {
+                canvas->printf("Log: OFF\r\n");
+            }
+        } else {
+            canvas->printf("Log: OFF \t (UDP is not connected !)\r\n");
+        }
+    }
+
     canvas->print("Ctrl Level: ");
     for (int i = 0; i < manual_operating_state_.ctrl_level; i++) {
         canvas->print("##");
@@ -965,21 +1009,22 @@ void SystemManager::update_display() {
     if (is_init_ctrl_task) {
         if (control_state_->is_init_scale) {
             canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-            canvas->printf("Weight: %f\r\n", control_state_->sensor_weight);
-            canvas->printf("Raw ADC: %d\r\n",
+            canvas->printf("Weight: %f, \t Raw ADC: %d\r\n",
+                           control_state_->sensor_weight,
                            control_state_->sensor_weight_raw_adc);
         } else {
+            // canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+            // canvas->printf("Weight: Not Init, \t Raw ADC: Not Init\r\n");
             canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
-            //canvas->printf("Weight: Not Init\r\n");
-            //canvas->printf("Raw ADC: Not Init\r\n");
-            canvas->printf("Weight: %f\r\n", control_state_->sensor_weight);
-            canvas->printf("Raw ADC: %d\r\n",
+            canvas->printf("Weight: %f, \t Raw ADC: %d\r\n",
+                           control_state_->sensor_weight,
                            control_state_->sensor_weight_raw_adc);
         }
 
         canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
+        /*
         if (manual_operating_state_.mode ==
-                manual_operating_mode::CONNECT_CAN &&
+                manual_operating_mode::CHANGE_SERVO_ID &&
             manual_operating_state_.act_phase ==
                 manual_operating_phase::VALUE_CHANGE &&
             display_blink_cnt % 5 == 0) {
@@ -988,10 +1033,10 @@ void SystemManager::update_display() {
             if (control_state_->act_can_connection_status) {
                 canvas->printf("CAN: Connected\r\n");
             } else {
-                canvas->printf("CAN: Disconnected\r\n");
+                canvas->printf("CAN: Not connected\r\n");
             }
         }
-
+        */
         if (manual_operating_state_.mode ==
                 manual_operating_mode::CHANGE_SERVO_ID &&
             manual_operating_state_.act_phase ==
@@ -999,20 +1044,44 @@ void SystemManager::update_display() {
             display_blink_cnt % 5 == 0) {
             canvas->printf("SRV ID: \r\n");
         } else {
-            canvas->printf("SRV ID: %d\r\n", control_state_->servo_id);
+            canvas->printf("SRV ID: %d", control_state_->servo_id);
+            if (control_state_->act_can_connection_status) {
+                canvas->printf(" (CAN)");
+            } else {
+                canvas->printf(" (DUMMY)");
+            }
+            if (system_state_data.state_code.state_machine !=
+                    node_state_machine::READY &&
+                manual_operating_state_.mode ==
+                    manual_operating_mode::CHANGE_SERVO_ID) {
+                canvas->printf("\t (SM is not Ready !)\r\n");
+            } else {
+                canvas->printf("\r\n");
+            }
         }
+        // canvas->printf("SRV ID: %d\r\n", control_state_->servo_id);
 
-        if (manual_operating_state_.mode ==
-                manual_operating_mode::CHANGE_SERVO_POWER &&
+        if ((manual_operating_state_.mode ==
+                 manual_operating_mode::CHANGE_SERVO_POWER ||
+             (manual_operating_state_.mode ==
+                  manual_operating_mode::CMD_SERVO_CONTROL &&
+              !control_state_->is_power_on)) &&
             manual_operating_state_.act_phase ==
                 manual_operating_phase::VALUE_CHANGE &&
             display_blink_cnt % 5 == 0) {
             canvas->printf("SRV Power: \r\n");
         } else {
-            if (control_state_->is_power_on) {
-                canvas->printf("SRV Power: ON\r\n");
+            if (system_state_data.state_code.state_machine !=
+                    node_state_machine::STABLE &&
+                manual_operating_state_.mode ==
+                    manual_operating_mode::CHANGE_SERVO_POWER) {
+                canvas->printf("SRV Power: OFF (SM is not Stable !)\r\n");
             } else {
-                canvas->printf("SRV Power: OFF\r\n");
+                if (control_state_->is_power_on) {
+                    canvas->printf("SRV Power: ON\r\n");
+                } else {
+                    canvas->printf("SRV Power: OFF\r\n");
+                }
             }
         }
 
@@ -1062,18 +1131,21 @@ void SystemManager::update_display() {
 
     // << END Control Status
 
+    canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
     if (is_init_lan) {
-        canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
         canvas->printf(">> LAN Status\r\n");
-        canvas->printf("Local IP: %s\r\n", local_ip.toString().c_str());
-        canvas->printf("Dst IP: %s\r\n", destination_ip.toString().c_str());
-        canvas->printf("Recv Port: %d \t Send Port: %d\r\n", recv_port,
-                       send_port);
-        canvas->printf("Recv Num: %d \t  Send Num: %d\r\n",
-                       system_state_->udp_recv_num,
+        canvas->printf("Local IP: %s(%d), \t Num: %d\r\n",
+                       local_ip.toString().c_str(), recv_port,
+                       system_state_->udp_recv_num);
+        canvas->printf("Dst   IP: %s(%d), \t Num: %d\r\n",
+                       destination_ip.toString().c_str(), send_port,
                        system_state_->udp_send_num);
+        // canvas->printf("Recv Port: %d \t Send Port: %d\r\n", recv_port,
+        //                send_port);
+        // canvas->printf("Recv Num: %d \t  Send Num: %d\r\n",
+        //                system_state_->udp_recv_num,
+        //                system_state_->udp_send_num);
     } else {
-        canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
         canvas->printf(">> LAN Status\r\n");
         canvas->printf("...Not Exist...\r\n");
     }
@@ -1140,13 +1212,22 @@ void SystemManager::set_udp_recv_packet(uint8_t* packetBuffer) {
 }
 
 int SystemManager::get_udp_send_packet(uint8_t* packetBuffer) {
+    if (!is_connected_udp) {
+        return 0;
+    }
+
     // ここで、パケット混載を作る
     if (is_streaming_state) {
         set_udp_send_state(system_state_data);
         set_udp_send_state(control_state_data);
+        M5DEV_LOGI("Streaming State");
+        M5DEV_LOGI("System State: %d", system_state_data.state_code.data_size);
+        M5DEV_LOGI("Control State: %d",
+                   control_state_data.state_code.data_size);
     } else if (is_requested_state_at_once) {
         set_udp_send_state(system_state_data);
         set_udp_send_state(control_state_data);
+        M5DEV_LOGI("Requested State");
         is_requested_state_at_once = false;
     }
     if (udp_send_packet_.stack_marker_num > 0) {
@@ -1154,6 +1235,12 @@ int SystemManager::get_udp_send_packet(uint8_t* packetBuffer) {
         int packet_size = udp_send_packet_.stack_marker_num *
                               udp_send_packet_.one_stack_size +
                           udp_send_packet_.udp_frame_header_size;
+        M5_LOGI("Packet Size: %d", packet_size);
+        M5_LOGI("Stack Num: %d", udp_send_packet_.stack_num);
+        M5_LOGI("Stack Marker Num: %d", udp_send_packet_.stack_marker_num);
+        for (int i = 0; i < 5; i++) {
+            M5_LOGI("Stack Marker: %d", udp_send_packet_.stack_marker[i]);
+        }
         memcpy(packetBuffer, &udp_send_packet_, packet_size);
         reset_udp_send_packet(false);
         system_state_->udp_send_num++;

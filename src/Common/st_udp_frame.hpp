@@ -3,7 +3,7 @@
 #include <cstring>
 #include <iostream>
 
-#define MAX_UDP_STACK_MARKER_NUM     20
+#define MAX_UDP_STACK_MARKER_NUM     24
 #define UDP_ONE_STACK_SIZE           50
 #define MAX_UDP_SEND_STATE_DATA_SIZE 1200
 // > MAX_STACK_MARKER_NUM * ONE_STACK_SIZE
@@ -19,6 +19,8 @@ struct udp_frame
     int one_stack_size;              // 一つのスタックのサイズ[byte]
     int max_stack_size_at_once;  // 一度に送信するスタックの最大数[byte]
     // 以下が毎回可変なデータ
+    // バイナリデータのスタックの総数
+    int stack_num;
     // バイナリデータのスタック目印の総数
     int stack_marker_num;
     // バイナリデータのスタック目印を記録する配列
@@ -32,9 +34,8 @@ struct udp_frame
             sizeof(fixed_state_header_data_size) +
             sizeof(fixed_cmd_header_data_size) + sizeof(max_stack_marker_size) +
             sizeof(one_stack_size) + sizeof(max_stack_size_at_once) +
-            sizeof(stack_marker_num) +
-            MAX_UDP_STACK_MARKER_NUM;  // size = 4 * 6 +
-                                       // 20:MAX_UDP_STACK_MARKER_NUM = 26
+            sizeof(stack_marker_num) + sizeof(stack_num) +
+            MAX_UDP_STACK_MARKER_NUM;  // size = 4 * 8 + 24 = 56
         //
         fixed_state_header_data_size = 0;
         fixed_cmd_header_data_size = 0;
@@ -42,6 +43,7 @@ struct udp_frame
         one_stack_size = UDP_ONE_STACK_SIZE;
         max_stack_size_at_once = MAX_STACK_SIZE_AT_ONCE;
         //
+        stack_num = 0;
         stack_marker_num = 0;
         memset(stack_marker, 0, MAX_UDP_STACK_MARKER_NUM);
         memset(data, 0, MAX_UDP_SEND_STATE_DATA_SIZE);

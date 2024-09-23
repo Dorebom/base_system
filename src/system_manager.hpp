@@ -54,6 +54,7 @@ private:
     bool is_requested_state_at_once = false;
     bool is_streaming_state = false;
     bool is_streaming_state_for_logging = false;
+    bool is_logging = false;
     // >> EMS Button
     bool prev_emergency_stop_switch_for_control_task = false;
 
@@ -72,8 +73,8 @@ private:
     // << Stack
 
     // for udp
-    udp_frame udp_send_packet_;        // TODO node class への移植
-    int recent_stack_marker_size = 0;  // TODO node class への移植
+    udp_frame udp_send_packet_;  // TODO node class への移植
+    // int recent_stack_marker_size = 0;  // TODO node class への移植
     uint8_t unsent_data[MAX_STACK_SIZE_AT_ONCE];  // TODO node class への移植
     bool is_unsent_data = false;  // TODO node class への移植
     int unsent_stack_marker = 0;  // TODO node class への移植
@@ -104,6 +105,8 @@ private:
     // >> B Node
     void set_cmd_start_logging();
     void set_cmd_stop_logging();
+    void set_res_cmd_start_logging();
+    void set_res_cmd_stop_logging();
 
 public:
     SystemManager();

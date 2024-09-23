@@ -26,12 +26,17 @@ struct ControlState
     double act_joint_velocity_0;
     double act_joint_torque_0;
 
+    // for control
+    double sum_error_vel;
+    double sum_error_torque;
+
     // servo info
 
     float sensor_weight;
     int32_t sensor_weight_raw_adc;
 
     int waiting_servo_id;
+    int dummy2;
 
     ControlState() {
         // >> Servo
@@ -53,6 +58,14 @@ struct ControlState
         cmd_joint_position = 0.0;
         cmd_joint_velocity = 0.0;
         cmd_joint_torque = 0.0;
+
+        act_joint_position_0 = 0.0;
+        act_joint_velocity_0 = 0.0;
+        act_joint_torque_0 = 0.0;
+
+        sum_error_vel = 0.0;
+
+        dummy2 = 2525;
     }
 
     void deepcopy(const ControlState& state) {
@@ -75,5 +88,11 @@ struct ControlState
         cmd_joint_position = state.cmd_joint_position;
         cmd_joint_velocity = state.cmd_joint_velocity;
         cmd_joint_torque = state.cmd_joint_torque;
+
+        act_joint_position_0 = state.act_joint_position_0;
+        act_joint_velocity_0 = state.act_joint_velocity_0;
+        act_joint_torque_0 = state.act_joint_torque_0;
+
+        sum_error_vel = state.sum_error_vel;
     }
 };

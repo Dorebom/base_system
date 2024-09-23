@@ -293,6 +293,14 @@ void ControlManager::stay_motor(uint8_t can_id) {
 }
 
 void ControlManager::position_control(uint8_t can_id, double target_position) {
+    // SAFETY
+    if (target_position < MIN_THRESHOLD_JOINT_POSITION) {
+        target_position = MIN_THRESHOLD_JOINT_POSITION;
+    } else if (target_position > MAX_THRESHOLD_JOINT_POSITION) {
+        target_position = MAX_THRESHOLD_JOINT_POSITION;
+    }
+    // << SAFETY
+
     twai_message_t msg;
     cybergear_driver.set_position_ref(can_id, target_position, msg);
     send_can_packet_task(msg);
@@ -300,6 +308,26 @@ void ControlManager::position_control(uint8_t can_id, double target_position) {
 }
 
 void ControlManager::velocity_control(uint8_t can_id, double target_velocity) {
+    // SAFETY
+    if (target_velocity < MIN_THRESHOLD_JOINT_VELOCITY) {
+        target_velocity = MIN_THRESHOLD_JOINT_VELOCITY;
+    } else if (target_velocity > MAX_THRESHOLD_JOINT_VELOCITY) {
+        target_velocity = MAX_THRESHOLD_JOINT_VELOCITY;
+    }
+
+    if (state_.act_joint_position < MIN_THRESHOLD_JOINT_POSITION &&
+        target_velocity < 0.0) {
+        target_velocity =
+            (-1.0) *
+            (state_.act_joint_position - MIN_THRESHOLD_JOINT_POSITION) * 20.0;
+    } else if (state_.act_joint_position > MAX_THRESHOLD_JOINT_POSITION &&
+               target_velocity > 0.0) {
+        target_velocity =
+            (-1.0) *
+            (state_.act_joint_position - MAX_THRESHOLD_JOINT_POSITION) * 20.0;
+    }
+    // << SAFETY
+
     twai_message_t msg;
     cybergear_driver.set_spd_ref(can_id, target_velocity, msg);
     send_can_packet_task(msg);
@@ -307,8 +335,107 @@ void ControlManager::velocity_control(uint8_t can_id, double target_velocity) {
 }
 
 void ControlManager::torque_control(uint8_t can_id, double target_torque) {
+    float cmd_value = 0.0;
+    // SAFETY
+    // >> 位置・速度超過の確認
+    bool is_over_position = false;
+    bool is_over_velocity = false;
+
+    double gain_pos_p = 10.0;
+    double gain_vel_p = 2.0;
+    double gain_vel_i = 0.021;
+
+    double v_cmd = 0.0;
+
+    if (state_.act_joint_position < MIN_THRESHOLD_JOINT_POSITION) {
+        is_over_position = true;
+    } else if (state_.act_joint_position > MAX_THRESHOLD_JOINT_POSITION) {
+        is_over_position = true;
+    }
+    if (state_.act_joint_velocity < MIN_THRESHOLD_JOINT_VELOCITY) {
+        is_over_velocity = true;
+    } else if (state_.act_joint_velocity > MAX_THRESHOLD_JOINT_VELOCITY) {
+        is_over_velocity = true;
+    }
+    //
+    if (is_over_position) {
+        if (state_.act_joint_position < MIN_THRESHOLD_JOINT_POSITION) {
+            v_cmd = gain_pos_p *
+                    (MIN_THRESHOLD_JOINT_POSITION - state_.act_joint_position);
+        } else if (state_.act_joint_position > MAX_THRESHOLD_JOINT_POSITION) {
+            v_cmd = gain_pos_p *
+                    (MAX_THRESHOLD_JOINT_POSITION - state_.act_joint_position);
+        }
+
+        if (v_cmd < MIN_THRESHOLD_JOINT_VELOCITY) {
+            v_cmd = MIN_THRESHOLD_JOINT_VELOCITY;
+        } else if (v_cmd > MAX_THRESHOLD_JOINT_VELOCITY) {
+            v_cmd = MAX_THRESHOLD_JOINT_VELOCITY;
+        }
+        state_.sum_error_vel += v_cmd - state_.act_joint_velocity;
+
+        target_torque = gain_vel_p * (v_cmd - state_.act_joint_velocity) +
+                        gain_vel_i * state_.sum_error_vel;
+    } else if (is_over_velocity) {
+        if (state_.act_joint_velocity < MIN_THRESHOLD_JOINT_VELOCITY) {
+            state_.sum_error_vel +=
+                MIN_THRESHOLD_JOINT_VELOCITY - state_.act_joint_velocity;
+            target_torque = gain_vel_p * (MIN_THRESHOLD_JOINT_VELOCITY -
+                                          state_.act_joint_velocity) +
+                            gain_vel_i * state_.sum_error_vel;
+        } else if (state_.act_joint_velocity > MAX_THRESHOLD_JOINT_VELOCITY) {
+            state_.sum_error_vel +=
+                MAX_THRESHOLD_JOINT_VELOCITY - state_.act_joint_velocity;
+            target_torque = gain_vel_p * (MAX_THRESHOLD_JOINT_VELOCITY -
+                                          state_.act_joint_velocity) +
+                            gain_vel_i * state_.sum_error_vel;
+        }
+    } else {
+        v_cmd = 0.0;
+        state_.sum_error_vel = 0.0;
+        state_.sum_error_torque = 0.0;
+    }
+
+    if (target_torque < MIN_THRESHOLD_JOINT_TORQUE) {
+        target_torque = MIN_THRESHOLD_JOINT_TORQUE;
+    } else if (target_torque > MAX_THRESHOLD_JOINT_TORQUE) {
+        target_torque = MAX_THRESHOLD_JOINT_TORQUE;
+    }
+
+    /*
+    if (state_.act_joint_position < MIN_THRESHOLD_JOINT_POSITION &&
+        target_torque < 0.0) {
+        target_torque =
+            (-1.0) *
+            (state_.act_joint_position - MIN_THRESHOLD_JOINT_POSITION) * 5.0;
+    } else if (state_.act_joint_position > MAX_THRESHOLD_JOINT_POSITION &&
+               target_torque > 0.0) {
+        target_torque =
+            (-1.0) *
+            (state_.act_joint_position - MAX_THRESHOLD_JOINT_POSITION) * 5.0;
+    }
+    */
+    // << SAFETY
+    state_.sum_error_torque += target_torque - state_.act_joint_torque;
+
+    cmd_value = (target_torque - state_.act_joint_torque) * 2.0 +
+                0.01 * state_.sum_error_torque;
+
+    if (cmd_value < MIN_THRESHOLD_JOINT_CURRENT) {
+        cmd_value = MIN_THRESHOLD_JOINT_CURRENT;
+    } else if (cmd_value > MAX_THRESHOLD_JOINT_CURRENT) {
+        cmd_value = MAX_THRESHOLD_JOINT_CURRENT;
+    }
+
+    /*
+    M5_LOGI(
+        "ControlManager::torque_control: cmd_value: %f, \t target_value: "
+        "%f"
+        ", \t is over pos : %d, \t is over vel : %d",
+        cmd_value, target_torque, is_over_position, is_over_velocity);
+    */
     twai_message_t msg;
-    cybergear_driver.set_iq_ref(can_id, target_torque, msg);
+    cybergear_driver.set_iq_ref(can_id, cmd_value, msg);
     send_can_packet_task(msg);
     recv_can();
 }
@@ -332,6 +459,16 @@ void ControlManager::set_controlled_servo_id(uint8_t servo_id) {
     // recv
     state_.act_can_connection_status = recv_can();
     if (state_.act_can_connection_status) {
+        state_.cmd_joint_position = state_.act_joint_position;
+        state_.cmd_joint_velocity = 0.0;
+        state_.cmd_joint_torque = 0.0;
+
+        state_.act_joint_position_0 = state_.act_joint_position;
+        state_.act_joint_velocity_0 = 0.0f;
+        state_.act_joint_torque_0 = 0.0f;
+
+        set_servo_ctrl_mode(servo_id, basic_servo_ctrl_cmd_list::STAY);
+
         M5_LOGI("ControlManager::set_controlled_servo_id: Connected (%d)",
                 servo_id);
     } else {
@@ -372,11 +509,25 @@ void ControlManager::set_servo_power(uint8_t servo_id, bool is_power_on) {
         state_.cmd_joint_torque = 0.0;  // TODO: Implement
 
         state_.act_joint_position_0 = state_.act_joint_position;
-        state_.act_joint_velocity_0 = 0.0f;
-        state_.act_joint_torque_0 = 0.0f;
+        state_.act_joint_velocity_0 = 0.0;
+        state_.act_joint_torque_0 = 0.0;
 
         if (state_.act_can_connection_status) {  // CAN Connected
             twai_message_t msg;
+
+            cybergear_driver.set_position_ref(servo_id,
+                                              state_.act_joint_position, msg);
+            send_can_packet_task(msg);
+            recv_can();
+
+            cybergear_driver.set_spd_ref(servo_id, 0.0, msg);
+            send_can_packet_task(msg);
+            recv_can();
+
+            cybergear_driver.set_iq_ref(servo_id, 0.0, msg);
+            send_can_packet_task(msg);
+            recv_can();
+
             cybergear_driver.enable_motor(servo_id, msg);
             send_can_packet_task(msg);
             recv_can();
@@ -403,6 +554,16 @@ void ControlManager::set_servo_ctrl_mode(uint8_t servo_id,
     {
         switch (ctrl_mode) {
             case basic_servo_ctrl_cmd_list::STAY:
+                // 位置指令のリセット
+                state_.cmd_joint_position = state_.act_joint_position;
+                position_control(servo_id, state_.act_joint_position);
+                // 速度制限の設定
+                cybergear_driver.set_limit_spd(servo_id, 10.0, msg);
+                send_can_packet_task(msg);
+                recv_can();
+                // 位置制御モードへ変更
+                cybergear_driver.set_position_mode(servo_id, msg);
+                motor_status[servo_id].ctrl_mode = MODE_POSITION;
                 break;
             case basic_servo_ctrl_cmd_list::POSITION:
                 // 位置指令のリセット

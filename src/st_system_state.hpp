@@ -22,6 +22,7 @@ struct SystemState
     unsigned short int udp_send_num;
     signed short int dummy2[1];
     basic_m5stack_cmd_list act_cmd_type;
+    unsigned int dummy3;
 
     SystemState() {
         ave_calc_time_of_main_task = 0;
@@ -36,5 +37,6 @@ struct SystemState
         udp_recv_num = 0;
         udp_send_num = 0;
         act_cmd_type = basic_m5stack_cmd_list::NONE;
+        dummy3 = 255;
     }
 };

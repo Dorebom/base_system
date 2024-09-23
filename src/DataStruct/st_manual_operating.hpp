@@ -8,7 +8,8 @@ enum class manual_operating_mode : int
     CHANGE_SERVO_POWER,
     CHANGE_SERVO_CONTROL_MODE,
     CMD_SERVO_CONTROL,
-    CONNECT_CAN
+    CONNECT_CAN,
+    CHANGE_LOGGING_MODE
 };
 
 enum class manual_operating_phase : int
