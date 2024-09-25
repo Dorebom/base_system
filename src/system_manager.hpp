@@ -41,8 +41,8 @@
 class SystemManager {
 private:
     ModuleDisplay display_;
-    ModuleManualOperation manual_operation_;
-    ModuleSystemCmd system_cmd_;
+    // ModuleManualOperation manual_operation_;
+    //  ModuleSystemCmdRegister system_cmd_reg_;
 
     // Flag
     // >> System
