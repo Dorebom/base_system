@@ -39,6 +39,10 @@ struct ControlState
     int dummy2;
 
     ControlState() {
+        init();
+    }
+
+    void init() {
         // >> Servo
         act_can_connection_status = false;
         servo_id = 0;  // 0: not used, 1: servo1, 2: servo2
@@ -65,7 +69,7 @@ struct ControlState
 
         sum_error_vel = 0.0;
 
-        dummy2 = 2525;
+        dummy2 = 0x2525;
     }
 
     void deepcopy(const ControlState& state) {

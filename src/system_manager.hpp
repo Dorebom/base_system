@@ -31,42 +31,35 @@
 #include "Sensor/unit_encoder.h"
 //
 #include "DataStruct/st_manual_operating.hpp"
-
-#define TITLE_FONT_SIZE      2
-#define TEXT_FONT_SIZE       1.5
-#define TEXT_FONT_SIZE_SMALL 1.3
+#include "module_display.hpp"
+#include "module_manual_operation.hpp"
+#include "module_system_cmd.hpp"
 
 #define MAX_NODE_CMD_DATA_SIZE  200
 #define MAX_NODE_CMD_STACK_SIZE 10
 
 class SystemManager {
 private:
-    M5Canvas* canvas;
+    ModuleDisplay display_;
+    ModuleManualOperation manual_operation_;
+    ModuleSystemCmd system_cmd_;
 
     // Flag
     // >> System
-    bool is_init_canvas = false;
     bool is_init_main_task = false;
-    bool is_init_ctrl_task = false;
     // >> LAN and UDP
-    bool is_init_lan = false;
-    bool is_connected_udp = false;
     bool is_requested_state_at_once = false;
     bool is_streaming_state = false;
     bool is_streaming_state_for_logging = false;
-    bool is_logging = false;
     // >> EMS Button
     bool prev_emergency_stop_switch_for_control_task = false;
 
     // Data
-    node_state system_state_data;
-    node_state control_state_data;
+    std::shared_ptr<node_state> system_state_data;
+    std::shared_ptr<node_state> control_state_data;
 
     SystemState* system_state_;
     ControlState* control_state_;
-    // SystemState system_state_;
-    // ControlState control_state_;
-    // node_state node_state_;
     //  >> Stack
     std::shared_ptr<node_cmd> node_cmd_;
     std::shared_ptr<node_cmd> ctrl_cmd_;
@@ -79,15 +72,6 @@ private:
     bool is_unsent_data = false;  // TODO node class への移植
     int unsent_stack_marker = 0;  // TODO node class への移植
 
-    bool display_heart_beat = false;
-    uint8_t display_blink_cnt = 0;
-
-    // LAN
-    IPAddress local_ip;
-    uint32_t recv_port;
-    IPAddress destination_ip;
-    uint32_t send_port;
-
     // Encoder Button
     Unit_Encoder encoder_button;
 
@@ -98,8 +82,9 @@ private:
 
     // Function
     // >> UDP
-    void set_udp_send_state(st_node_state state);  // TODO node class への移植
-    void set_udp_send_cmd(st_node_cmd cmd);  // TODO node class への移植
+    void set_udp_send_state(
+        std::shared_ptr<st_node_state> state);  // TODO node class への移植
+    void set_udp_send_cmd(st_node_cmd cmd);     // TODO node class への移植
     void reset_udp_send_packet(
         bool discard_unsent_data);  // TODO node class への移植
     // >> B Node

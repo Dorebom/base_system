@@ -14,9 +14,12 @@ struct SystemState
     uint32_t max_calc_time_of_udp_send_task;
     bool emergency_stop_switch_for_control_task;
     bool encoder_button_flag;
+    bool is_connected_udp;
     bool is_occured_error_;
     bool is_occured_warning_;
-    bool dummy[4];
+    bool is_logging;
+    bool is_init_ctrl_task;
+    bool is_init_lan;
     signed short int encoder_button_value;
     unsigned short int udp_recv_num;
     unsigned short int udp_send_num;
@@ -25,6 +28,14 @@ struct SystemState
     unsigned int dummy3;
 
     SystemState() {
+        init();
+    }
+
+    void init() {
+        is_connected_udp = false;
+        is_logging = false;
+        is_occured_error_ = false;
+        is_occured_warning_ = false;
         ave_calc_time_of_main_task = 0;
         max_calc_time_of_main_task = 0;
         ave_calc_time_of_ctrl_task = 0;
