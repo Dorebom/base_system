@@ -37,59 +37,80 @@
 #define MAX_NODE_CMD_STACK_SIZE 10
 
 class SystemManager {
+    // Module
 private:
     ModuleDisplay display_;
     ModuleSystemCmdRegister syscmd_reg_;
     ModuleManualOperation manual_operation_;
 
-    // Flag
-    // >> System
-    bool is_init_main_task = false;
-    // >> LAN and UDP
-    bool is_requested_state_at_once = false;
-    bool is_streaming_state = false;
-    bool is_streaming_state_for_logging = false;
-    // >> EMS Button
-    bool prev_emergency_stop_switch_for_control_task = false;
+    // for Manual Operating
+    manual_operating_state manual_operating_state_;
 
+public:
+    // >> display
+    void set_canvas(M5Canvas* canvas_) {
+        display_.setup(canvas_);
+    }
+    void update_display() {
+        display_.update(&manual_operating_state_, control_state_, system_state_,
+                        &system_state_data->state_code);
+    }
+    // >> System Manual Operation
+    void update_manual_operating();
+    void begin_encoder_button(TwoWire* wire = &Wire,
+                              uint8_t addr = ENCODER_ADDR) {
+        manual_operation_.begin_encoder_button(wire, addr);
+    }
+    void update_encoder_button(bool force_stop_status) {
+        manual_operation_.update_encoder_button(force_stop_status);
+    }
+    bool check_encoder_button_flag() {
+        return system_state_->encoder_button_flag;
+    }
+    // << END Module
+
+    // MAIN
+private:
     // Data
     std::shared_ptr<node_state> system_state_data;
     std::shared_ptr<node_state> control_state_data;
-
     SystemState* system_state_;
     ControlState* control_state_;
     //  >> Stack
     std::shared_ptr<node_cmd> node_cmd_;
     std::shared_ptr<node_cmd> ctrl_cmd_;
-    // << Stack
-
-    // for udp
-    udp_frame udp_send_packet_;  // TODO node class への移植
-    // int recent_stack_marker_size = 0;  // TODO node class への移植
-    uint8_t unsent_data[MAX_STACK_SIZE_AT_ONCE];  // TODO node class への移植
-    bool is_unsent_data = false;  // TODO node class への移植
-    int unsent_stack_marker = 0;  // TODO node class への移植
-
-    // for Manual Operating
-    manual_operating_state* manop_state_;
-    manual_operating_state manual_operating_state_;
-
-    // << END Data
-
-    // Function
-    // >> UDP
-    void set_udp_send_state(
-        std::shared_ptr<st_node_state> state);  // TODO node class への移植
-    void set_udp_send_cmd(st_node_cmd cmd);     // TODO node class への移植
-    void reset_udp_send_packet(
-        bool discard_unsent_data);  // TODO node class への移植
-    // >> B Node
-    void set_res_cmd_start_logging();
-    void set_res_cmd_stop_logging();
+    // >> Flag
+    bool is_init_main_task = false;
+    bool prev_emergency_stop_switch_for_control_task = false;
 
 public:
     SystemManager();
     ~SystemManager();
+
+    // Function
+    void cmd_executor();
+    // >> State Machine
+    node_state_machine check_state_machine() {
+        return system_state_data->state_code.state_machine;
+    }
+    void set_state_machine_initializing() {
+        system_state_data->state_code.state_machine =
+            node_state_machine::INITIALIZING;
+    }
+    void set_state_machine_ready() {
+        system_state_data->state_code.state_machine = node_state_machine::READY;
+    }
+    void set_state_machine_stable() {
+        system_state_data->state_code.state_machine =
+            node_state_machine::STABLE;
+    }
+    void set_state_machine_force_stop() {
+        system_state_data->state_code.state_machine =
+            node_state_machine::FORCE_STOP;
+    }
+    // >> Emergency Stop
+    void set_emergency_stop_for_control_task(bool em_stop);
+    bool check_force_stop();
     // Thread
     void set_initialized_main_task() {
         is_init_main_task = true;
@@ -97,7 +118,7 @@ public:
     void set_initialized_ctrl_task() {
         system_state_->is_init_ctrl_task = true;
     }
-
+    // >> Processing Time
     void set_calc_time_of_main_task(uint32_t ave_calc_time,
                                     uint32_t max_calc_time) {
         system_state_->ave_calc_time_of_main_task = ave_calc_time;
@@ -115,58 +136,45 @@ public:
         system_state_->ave_calc_time_of_udp_send_task = ave_calc_time;
         system_state_->max_calc_time_of_udp_send_task = max_calc_time;
     }
+    // >> Control Task
+    void set_control_state(ControlState& state) {
+        // deep copy
+        control_state_->deepcopy(state);
+        // Note:
+        // ディスプレイ表示やUDP通信への影響は、状態マシンをReady状態にするかどうかで防ぐ。
+    }
+    void set_control_cmd(std::shared_ptr<node_cmd> cmd) {
+        ctrl_cmd_ = cmd;
+    }
+    // << END MAIN
 
-    // System
-    // >> State Machine
-    void set_state_machine_initializing() {
-        system_state_data->state_code.state_machine =
-            node_state_machine::INITIALIZING;
-    }
-    void set_state_machine_ready() {
-        system_state_data->state_code.state_machine = node_state_machine::READY;
-    }
-    void set_state_machine_stable() {
-        system_state_data->state_code.state_machine =
-            node_state_machine::STABLE;
-    }
-    void set_state_machine_force_stop() {
-        system_state_data->state_code.state_machine =
-            node_state_machine::FORCE_STOP;
-    }
+private:
+    // Flag
+    // >> LAN and UDP
+    bool is_requested_state_at_once = false;
+    bool is_streaming_state = false;
+    bool is_streaming_state_for_logging = false;
+    // >> EMS Button
 
-    // >> Command
-    void cmd_executor();
-    bool check_force_stop();
-    node_state_machine check_state_machine() {
-        return system_state_data->state_code.state_machine;
-    }
+    // for udp
+    udp_frame udp_send_packet_;  // TODO node class への移植
+    // int recent_stack_marker_size = 0;  // TODO node class への移植
+    uint8_t unsent_data[MAX_STACK_SIZE_AT_ONCE];  // TODO node class への移植
+    bool is_unsent_data = false;  // TODO node class への移植
+    int unsent_stack_marker = 0;  // TODO node class への移植
 
-    // >> System Operating Mode
-    void update_manual_operating();
+    // Function
+    // >> UDP
+    void set_udp_send_state(
+        std::shared_ptr<st_node_state> state);  // TODO node class への移植
+    void set_udp_send_cmd(st_node_cmd cmd);     // TODO node class への移植
+    void reset_udp_send_packet(
+        bool discard_unsent_data);  // TODO node class への移植
+    // >> B Node
+    void set_res_cmd_start_logging();
+    void set_res_cmd_stop_logging();
 
-    // EMS Button
-    void set_emergency_stop_for_control_task(bool em_stop);
-    // Encoder Button
-    void begin_encoder_button(TwoWire* wire = &Wire,
-                              uint8_t addr = ENCODER_ADDR) {
-        manual_operation_.begin_encoder_button(wire, addr);
-    }
-    void update_encoder_button(bool force_stop_status) {
-        manual_operation_.update_encoder_button(force_stop_status);
-    }
-    bool check_encoder_button_flag() {
-        return system_state_->encoder_button_flag;
-    }
-
-    // Display
-    void set_canvas(M5Canvas* canvas_) {
-        display_.setup(canvas_);
-    }
-    void update_display() {
-        display_.update(&manual_operating_state_, control_state_, system_state_,
-                        &system_state_data->state_code);
-    }
-
+public:
     // LAN
     void set_initialized_lan() {
         system_state_->is_init_lan = true;
@@ -192,14 +200,4 @@ public:
 
     void set_udp_recv_packet(uint8_t* packetBuffer);
     int get_udp_send_packet(uint8_t* packetBuffer);
-    // Control Unit
-    void set_control_state(ControlState& state) {
-        // deep copy
-        control_state_->deepcopy(state);
-        // Note:
-        // ディスプレイ表示やUDP通信への影響は、状態マシンをReady状態にするかどうかで防ぐ。
-    }
-    void set_control_cmd(std::shared_ptr<node_cmd> cmd) {
-        ctrl_cmd_ = cmd;
-    }
 };
