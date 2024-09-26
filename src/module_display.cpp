@@ -20,6 +20,44 @@ void ModuleDisplay::update(manual_operating_state* manop_state_,
                            common_state_code* system_state_code) {
     // Serial.println("module_display::update");
 
+    if (prev_is_logging == true && system_state_->is_logging == false) {
+        // Reset the canvas
+        canvas_->clear();
+        canvas_->setCursor(0, 0);
+        canvas_->pushSprite(0, 0);
+
+        canvas_->deleteSprite();
+        canvas_->createSprite(320, 240);
+        canvas_->setPaletteColor(1, GREEN);
+        canvas_->setTextScroll(false);
+        canvas_->setTextSize(2);
+    } else if (prev_is_logging == false && system_state_->is_logging == true) {
+        canvas_->clear();
+        canvas_->setCursor(0, 0);
+        canvas_->pushSprite(0, 0);
+
+        canvas_->deleteSprite();
+        canvas_->createSprite(240, 20);
+        canvas_->setPaletteColor(1, GREEN);
+        canvas_->setTextScroll(false);
+        canvas_->setTextSize(2);
+    }
+
+    if (!system_state_->is_logging) {
+        normal_display(manop_state_, ctrl_state_, system_state_,
+                       system_state_code);
+    } else {
+        small_display(manop_state_, ctrl_state_, system_state_,
+                      system_state_code);
+    }
+
+    prev_is_logging = system_state_->is_logging;
+}
+
+void ModuleDisplay::normal_display(manual_operating_state* manop_state_,
+                                   ControlState* ctrl_state_,
+                                   SystemState* system_state_,
+                                   common_state_code* system_state_code) {
     // if (!is_init_canvas || !is_init_all) {
     if (!is_init_canvas) {
         return;
@@ -303,6 +341,134 @@ void ModuleDisplay::update(manual_operating_state* manop_state_,
     } else {
         canvas_->printf(">> LAN Status\r\n");
         canvas_->printf("...Not Exist...\r\n");
+    }
+
+    // <<-- END Rewrite the canvas
+
+    // Update the canvas_
+    canvas_->endWrite();
+    canvas_->pushSprite(0, 0);
+
+    display_blink_cnt++;
+    if (display_blink_cnt > 5) {
+        display_blink_cnt = 0;
+    }
+}
+
+void ModuleDisplay::small_display(manual_operating_state* manop_state_,
+                                  ControlState* ctrl_state_,
+                                  SystemState* system_state_,
+                                  common_state_code* system_state_code) {
+    // if (!is_init_canvas || !is_init_all) {
+    if (!is_init_canvas) {
+        return;
+    }
+
+    String str_op = "";
+    String str_sm = "";
+    String str_ctrl_mode = "";
+
+    // Reset the canvas
+    canvas_->clear();
+    canvas_->setCursor(0, 0);
+
+    switch (system_state_code->state_machine) {
+        case node_state_machine::FORCE_STOP:
+            canvas_->setPaletteColor(1, RED);
+            break;
+        case node_state_machine::READY:
+            canvas_->setPaletteColor(1, WHITE);
+            break;
+        case node_state_machine::STABLE:
+            canvas_->setPaletteColor(1, GREEN);
+            break;
+        default:
+            canvas_->setPaletteColor(1, WHITE);
+            break;
+    }
+    // Rewrite the canvas
+    canvas_->startWrite(true);
+
+    canvas_->setTextSize(TEXT_FONT_SIZE_SMALL);
+
+    switch (manop_state_->mode) {
+        case manual_operating_mode::NONE:
+            str_op = " -  ";
+            break;
+        case manual_operating_mode::CHANGE_SM:
+            str_op = " SM ";
+            break;
+        case manual_operating_mode::CHANGE_SERVO_ID:
+            str_op = " ID ";
+            break;
+        case manual_operating_mode::CHANGE_SERVO_POWER:
+            str_op = "PWR ";
+            break;
+        case manual_operating_mode::CHANGE_SERVO_CONTROL_MODE:
+            str_op = "MODE";
+            break;
+        case manual_operating_mode::CMD_SERVO_CONTROL:
+            str_op = "CTRL";
+            break;
+        case manual_operating_mode::CHANGE_LOGGING_MODE:
+            str_op = "LOG ";
+            break;
+        default:
+            break;
+    }
+
+    switch (system_state_code->state_machine) {
+        case node_state_machine::INITIALIZING:
+            str_sm = "I";
+            break;
+        case node_state_machine::READY:
+            str_sm = "R";
+            break;
+        case node_state_machine::STABLE:
+            str_sm = "S";
+            break;
+        case node_state_machine::FORCE_STOP:
+            str_sm = "F";
+            break;
+        default:
+            break;
+    }
+
+    switch (ctrl_state_->ctrl_mode) {
+        case basic_servo_ctrl_cmd_list::TORQUE:
+            str_ctrl_mode = "T";
+            break;
+        case basic_servo_ctrl_cmd_list::VELOCITY:
+            str_ctrl_mode = "V";
+            break;
+        case basic_servo_ctrl_cmd_list::POSITION:
+            str_ctrl_mode = "P";
+            break;
+        case basic_servo_ctrl_cmd_list::STAY:
+            str_ctrl_mode = "-";
+            break;
+        default:
+            break;
+    }
+
+    if (manop_state_->act_phase == manual_operating_phase::MODE_CHANGE &&
+        display_blink_cnt % 5 == 0) {
+        canvas_->printf("--:%s|SM:%s|Ct:%s|Ave:%dms|Max:%dms\r\n",
+                        str_op.c_str(), str_sm.c_str(), str_ctrl_mode.c_str(),
+                        system_state_->ave_calc_time_of_main_task,
+                        system_state_->max_calc_time_of_main_task);
+    } else {
+        canvas_->printf("Op:%s|SM:%s|Ct:%s|Ave:%dms|Max:%dms\r\n",
+                        str_op.c_str(), str_sm.c_str(), str_ctrl_mode.c_str(),
+                        system_state_->ave_calc_time_of_main_task,
+                        system_state_->max_calc_time_of_main_task);
+    }
+    if (ctrl_state_->is_init_joint_pos ||
+        ctrl_state_->act_can_connection_status) {
+        canvas_->printf(
+            "Lv:%d|P:%.3f|V:%.2f|T:%.3f\r\n", manop_state_->ctrl_level,
+            ctrl_state_->act_joint_position, ctrl_state_->act_joint_velocity,
+            ctrl_state_->act_joint_torque);
     }
 
     // <<-- END Rewrite the canvas

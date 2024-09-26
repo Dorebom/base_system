@@ -317,25 +317,6 @@ node_state_machine SystemManager::check_state_machine() {
     return system_state_data->state_code.state_machine;
 }
 
-void SystemManager::set_cmd_connect_can(
-    connected_can_switch connected_can_switch_) {
-    st_node_cmd cmd;
-    cmd.default_init();
-
-    if (system_state_data->state_code.state_machine !=
-        node_state_machine::READY) {
-        return;
-    }
-
-    if (connected_can_switch_ == connected_can_switch::CONNECT) {
-        cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::CONNECT_CAN;
-    } else {
-        cmd.cmd_code.cmd_type = basic_m5stack_cmd_list::DISCONNECT_CAN;
-    }
-
-    node_cmd_->cmd_stack_.push(cmd);
-}
-
 void SystemManager::set_cmd_change_state_machine(
     node_state_machine state_machine) {
     st_node_cmd cmd;
@@ -628,23 +609,6 @@ void SystemManager::update_manual_operating() {
     if (manual_operating_state_.act_phase ==
         manual_operating_phase::VALUE_CHANGE) {
         switch (manual_operating_state_.mode) {
-                /*
-                case manual_operating_mode::CONNECT_CAN:
-                    if (manual_operating_state_.act_encoder_value >
-                        manual_operating_state_.encoder_offest + 1) {
-                        // command stackに命令を追加
-                        set_cmd_connect_can(connected_can_switch::CONNECT);
-                        manual_operating_state_.encoder_offest =
-                            manual_operating_state_.act_encoder_value;
-                    } else if (manual_operating_state_.act_encoder_value <
-                               manual_operating_state_.encoder_offest - 1) {
-                        // command stackに命令を追加
-                        set_cmd_connect_can(connected_can_switch::DISCONNECT);
-                        manual_operating_state_.encoder_offest =
-                            manual_operating_state_.act_encoder_value;
-                    }
-                    break;
-                */
             case manual_operating_mode::CHANGE_LOGGING_MODE:
                 if (manual_operating_state_.act_encoder_value >
                     manual_operating_state_.encoder_offest + 1) {

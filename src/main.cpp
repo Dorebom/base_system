@@ -124,6 +124,7 @@ static void main_task(void *arg) {
     // Timer
     unsigned long start, end;
     unsigned long start_debug, end_debug;
+    unsigned long start_reset, end_reset;
     start = millis();              // 計測開始時間
     end = millis();                // 計測終了時間
     double elapsed = end - start;  // 処理に要した時間をミリ秒に変換
@@ -159,6 +160,7 @@ static void main_task(void *arg) {
     // << END Initialize
     sys_manager.set_state_machine_ready();
 
+    start_reset = millis();
     /*
      * 2. MAIN LOOP
      */
@@ -211,9 +213,16 @@ static void main_task(void *arg) {
 
         // >> 処理時間の更新
         elapsed = end - start;  // 処理に要した時間をミリ秒に変換
-        if (elapsed > max_calc_time_of_main_task) {
-            max_calc_time_of_main_task = (uint32_t)elapsed;
+
+        if ((end - start_reset) > reset_time_interval) {
+            start_reset = millis();
+            max_calc_time_of_main_task = 0;
+        } else {
+            if (elapsed > max_calc_time_of_main_task) {
+                max_calc_time_of_main_task = (uint32_t)elapsed;
+            }
         }
+
         ave_calc_time_of_main_task =
             ave_calc_time_of_main_task * 0.9 + (uint32_t)elapsed * 0.1;
         sys_manager.set_calc_time_of_main_task(ave_calc_time_of_main_task,

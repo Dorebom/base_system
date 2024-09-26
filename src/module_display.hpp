@@ -24,6 +24,15 @@ private:
     uint32_t recv_port_;
     uint32_t send_port_;
 
+    bool prev_is_logging = false;
+
+    void normal_display(manual_operating_state* manop_state_,
+                        ControlState* ctrl_state_, SystemState* system_state_,
+                        common_state_code* system_state_code);
+    void small_display(manual_operating_state* manop_state_,
+                       ControlState* ctrl_state_, SystemState* system_state_,
+                       common_state_code* system_state_code);
+
 public:
     ModuleDisplay(/* args */) {
     }
