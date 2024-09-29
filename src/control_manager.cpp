@@ -246,6 +246,7 @@ bool ControlManager::recv_can() {
                 //
                 motor_status_->master_id = (rx_msg.identifier & 0x000000FF);
 
+                state_.timestamp = motor_status_->timestamp;
                 state_.act_joint_position = motor_status_->act_position;
                 state_.act_joint_velocity = motor_status_->act_velocity;
                 state_.act_joint_torque = motor_status_->act_effort;

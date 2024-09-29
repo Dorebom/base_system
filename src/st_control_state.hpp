@@ -10,7 +10,7 @@ struct ControlState
     bool is_power_on;
     bool act_can_connection_status;
     bool is_init_joint_pos;
-    bool dummy[4];
+    unsigned long timestamp;
 
     int servo_id;
     basic_servo_ctrl_cmd_list ctrl_mode;
@@ -49,6 +49,7 @@ struct ControlState
         is_init_joint_pos = false;
         is_power_on = false;
         ctrl_mode = basic_servo_ctrl_cmd_list::STAY;
+        timestamp = 0;
 
         // >> weight scale
         is_init_scale = false;
@@ -79,6 +80,7 @@ struct ControlState
         is_init_joint_pos = state.is_init_joint_pos;
         is_power_on = state.is_power_on;
         ctrl_mode = state.ctrl_mode;
+        timestamp = state.timestamp;
 
         // >> weight scale
         is_init_scale = state.is_init_scale;

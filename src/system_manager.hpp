@@ -19,11 +19,13 @@
 
 #include <cstdint>
 #include <memory>
+// #include <mutex>
 
 #include "Common/node_cmd.hpp"
 #include "Common/node_state.hpp"
 //
 #include "st_control_state.hpp"
+#include "st_control_state_udp.hpp"
 #include "st_system_state.hpp"
 //
 #include "Common/st_udp_frame.hpp"
@@ -37,14 +39,19 @@
 #define MAX_NODE_CMD_STACK_SIZE 10
 
 class SystemManager {
-    // Module
+    /*
+     * Module
+     */
 private:
-    ModuleDisplay display_;
-    ModuleSystemCmdRegister syscmd_reg_;
-    ModuleManualOperation manual_operation_;
+    ModuleDisplay display_;               // Display表示するモジュール
+    ModuleSystemCmdRegister syscmd_reg_;  // C0mmandStackに登録するモジュール
+    ModuleManualOperation manual_operation_;  // Manual操作するモジュール
 
     // for Manual Operating
     manual_operating_state manual_operating_state_;
+
+    // Mutex
+    // std::mutex mtx_comm_udp_;
 
 public:
     // >> display
@@ -53,7 +60,7 @@ public:
     }
     void update_display() {
         display_.update(&manual_operating_state_, control_state_, system_state_,
-                        &system_state_data->state_code);
+                        &system_state_data.state_code);
     }
     // >> System Manual Operation
     void update_manual_operating();
@@ -69,13 +76,19 @@ public:
     }
     // << END Module
 
-    // MAIN
+    /*
+     * MAIN
+     */
 private:
     // Data
-    std::shared_ptr<node_state> system_state_data;
-    std::shared_ptr<node_state> control_state_data;
+    node_state system_state_data;
+    node_state control_state_data;
     SystemState* system_state_;
     ControlState* control_state_;
+    //
+    node_state control_state_udp_data;
+    ControlStateUdp* control_state_udp_;
+
     //  >> Stack
     std::shared_ptr<node_cmd> node_cmd_;
     std::shared_ptr<node_cmd> ctrl_cmd_;
@@ -91,21 +104,20 @@ public:
     void cmd_executor();
     // >> State Machine
     node_state_machine check_state_machine() {
-        return system_state_data->state_code.state_machine;
+        return system_state_data.state_code.state_machine;
     }
     void set_state_machine_initializing() {
-        system_state_data->state_code.state_machine =
+        system_state_data.state_code.state_machine =
             node_state_machine::INITIALIZING;
     }
     void set_state_machine_ready() {
-        system_state_data->state_code.state_machine = node_state_machine::READY;
+        system_state_data.state_code.state_machine = node_state_machine::READY;
     }
     void set_state_machine_stable() {
-        system_state_data->state_code.state_machine =
-            node_state_machine::STABLE;
+        system_state_data.state_code.state_machine = node_state_machine::STABLE;
     }
     void set_state_machine_force_stop() {
-        system_state_data->state_code.state_machine =
+        system_state_data.state_code.state_machine =
             node_state_machine::FORCE_STOP;
     }
     // >> Emergency Stop
@@ -137,45 +149,17 @@ public:
         system_state_->max_calc_time_of_udp_send_task = max_calc_time;
     }
     // >> Control Task
-    void set_control_state(ControlState& state) {
-        // deep copy
-        control_state_->deepcopy(state);
-        // Note:
-        // ディスプレイ表示やUDP通信への影響は、状態マシンをReady状態にするかどうかで防ぐ。
-    }
+    void set_control_state(ControlState& state);
     void set_control_cmd(std::shared_ptr<node_cmd> cmd) {
         ctrl_cmd_ = cmd;
     }
     // << END MAIN
 
+    /*
+     * LAN and Udp
+     */
 private:
-    // Flag
-    // >> LAN and UDP
-    bool is_requested_state_at_once = false;
-    bool is_streaming_state = false;
-    bool is_streaming_state_for_logging = false;
-    // >> EMS Button
-
-    // for udp
-    udp_frame udp_send_packet_;  // TODO node class への移植
-    // int recent_stack_marker_size = 0;  // TODO node class への移植
-    uint8_t unsent_data[MAX_STACK_SIZE_AT_ONCE];  // TODO node class への移植
-    bool is_unsent_data = false;  // TODO node class への移植
-    int unsent_stack_marker = 0;  // TODO node class への移植
-
-    // Function
-    // >> UDP
-    void set_udp_send_state(
-        std::shared_ptr<st_node_state> state);  // TODO node class への移植
-    void set_udp_send_cmd(st_node_cmd cmd);     // TODO node class への移植
-    void reset_udp_send_packet(
-        bool discard_unsent_data);  // TODO node class への移植
-    // >> B Node
-    void set_res_cmd_start_logging();
-    void set_res_cmd_stop_logging();
-
 public:
-    // LAN
     void set_initialized_lan() {
         system_state_->is_init_lan = true;
     }
@@ -187,6 +171,35 @@ public:
         display_.set_lan_info(local_ip_.toString(), destination_ip_.toString(),
                               recv_port_, send_port_);
     }
+    void set_udp_recv_packet(uint8_t* packetBuffer);
+    int get_udp_send_packet(uint8_t* packetBuffer);
+
+    /*
+     * Communication
+     */
+private:
+    // Flag
+    bool is_requested_state_at_once = false;
+    bool is_streaming_state = false;
+    bool is_streaming_state_for_logging = false;
+
+    // for udp
+    udp_frame udp_send_packet_;  // TODO node class への移植
+    // int recent_stack_marker_size = 0;  // TODO node class への移植
+    uint8_t unsent_data[MAX_STACK_SIZE_AT_ONCE];  // TODO node class への移植
+    bool is_unsent_data = false;  // TODO node class への移植
+    int unsent_stack_marker = 0;  // TODO node class への移植
+    // Function
+    // >> UDP
+    void set_udp_send_state(st_node_state* state);  // TODO node class への移植
+    void set_udp_send_cmd(st_node_cmd cmd);  // TODO node class への移植
+    void reset_udp_send_packet(
+        bool discard_unsent_data);  // TODO node class への移植
+    // >> B Node
+    void set_res_cmd_start_logging();
+    void set_res_cmd_stop_logging();
+
+public:
     uint32_t get_udp_recv_packet_size() {
         return sizeof(st_node_cmd);
     }
@@ -197,7 +210,4 @@ public:
     bool check_connected_udp() {
         return system_state_->is_connected_udp;
     }
-
-    void set_udp_recv_packet(uint8_t* packetBuffer);
-    int get_udp_send_packet(uint8_t* packetBuffer);
 };
