@@ -30,6 +30,8 @@ struct ControlState
     double sum_error_vel;
     double sum_error_torque;
 
+    double prev_joint_position;
+
     // servo info
 
     float sensor_weight;
@@ -57,6 +59,7 @@ struct ControlState
         sensor_weight_raw_adc = 0.0;
 
         act_joint_position = 0.0;
+        prev_joint_position = 0.0;
         act_joint_velocity = 0.0;
         act_joint_torque = 0.0;
 

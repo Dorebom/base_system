@@ -31,11 +31,11 @@ enum class BoardType : int
 BoardType board_type = BoardType::M5STACK_CORES3;
 
 // thread priority
-#define MAIN_SYSTEM_TASK_PRIORITY 3
-#define UDP_RECV_TASK_PRIORITY    1
-#define CTRL_TASK_PRIORITY        2
+#define MAIN_SYSTEM_TASK_PRIORITY 10  // 3
+#define UDP_RECV_TASK_PRIORITY    10  // 1
+#define CTRL_TASK_PRIORITY        20  // 2
 
-#define CTRL_TASK_TIME_INTERVAL     2
+#define CTRL_TASK_TIME_INTERVAL     1
 #define MAIN_TASK_TIME_INTERVAL     10
 #define UDP_RECV_TASK_TIME_INTERVAL 50
 
@@ -251,18 +251,28 @@ static void ctrl_task(void *arg) {
     /*
      * 1. Initialize
      */
+    uint32_t reset_time_interval = 5000;  // ms
+
     // >> 1.1. Initialize weight sensor module
     float weight = 0.0f;
     int32_t raw_adc = 0;
     M5_LOGW(" exist_weight_scale: %d", exist_weight_scale);
 
     // >> 1.2. Caluculation time Data
+    portTickType xLastWakeTime;
+
     uint32_t max_calc_time_of_ctrl_task = 0;
     uint32_t ave_calc_time_of_ctrl_task = 0;
-    unsigned long start, end;      // 型は auto で可
-    start = millis();              // 計測開始時間
-    end = millis();                // 計測終了時間
-    double elapsed = end - start;  // 処理に要した時間をミリ秒に変換
+    uint32_t time_cnt = 0;
+
+    // >> 1.4. Reset Time
+    uint32_t reset_time_cnt = (uint32_t)((float)reset_time_interval /
+                                         (float)CTRL_TASK_TIME_INTERVAL);  // ms
+
+    unsigned long start, end;    // 型は auto で可
+    start = micros();            // 計測開始時間
+    end = micros();              // 計測終了時間
+    auto elapsed = end - start;  // 処理に要した時間をミリ秒に変換
 
     ControlState state;
 
@@ -270,8 +280,10 @@ static void ctrl_task(void *arg) {
 
     sys_manager.set_initialized_ctrl_task();
 
+    xLastWakeTime = xTaskGetTickCount();
+
     while (1) {
-        start = millis();  // 計測開始時間
+        start = micros();  // 計測開始時間
         /* ------------------------- */
 
         // 1. Get State
@@ -292,20 +304,28 @@ static void ctrl_task(void *arg) {
         ctrl_manager.get_control_state(state);
         sys_manager.set_control_state(state);
         /* ------------------------- */
-        end = millis();  // 計測開始時間
+        end = micros();  // 計測開始時間
 
         // >> 処理時間の更新
         elapsed = end - start;  // 処理に要した時間をミリ秒に変換
-        if (elapsed > max_calc_time_of_ctrl_task) {
+        time_cnt++;
+        if (time_cnt >= reset_time_cnt) {
+            time_cnt = 0;
             max_calc_time_of_ctrl_task = (uint32_t)elapsed;
         }
+
+        if (elapsed > max_calc_time_of_ctrl_task) {
+            max_calc_time_of_ctrl_task = elapsed;
+        }
         ave_calc_time_of_ctrl_task =
-            ave_calc_time_of_ctrl_task * 0.9 + (uint32_t)elapsed * 0.1;
+            (ave_calc_time_of_ctrl_task * 9 + elapsed) / 10;
         sys_manager.set_calc_time_of_ctrl_task(ave_calc_time_of_ctrl_task,
                                                max_calc_time_of_ctrl_task);
         // >> END 処理時間の更新
 
-        vTaskDelay(pdMS_TO_TICKS(CTRL_TASK_TIME_INTERVAL));
+        // 2000 us - elapsed
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(CTRL_TASK_TIME_INTERVAL));
+        // vTaskDelay(pdMS_TO_TICKS(CTRL_TASK_TIME_INTERVAL));
     }
     vTaskDelete(NULL);
 }

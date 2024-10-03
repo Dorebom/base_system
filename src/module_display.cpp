@@ -205,7 +205,7 @@ void ModuleDisplay::normal_display(manual_operating_state* manop_state_,
     canvas_->setTextSize(TEXT_FONT_SIZE_SMALL);
     canvas_->printf(">> Control Status\r\n");
     canvas_->setTextSize(TEXT_FONT_SIZE_SMALL);
-    canvas_->printf("Ave: %d ms\t Max: %d ms\r\n",
+    canvas_->printf("Ave: %d us\t Max: %d us\r\n",
                     system_state_->ave_calc_time_of_ctrl_task,
                     system_state_->max_calc_time_of_ctrl_task);
 

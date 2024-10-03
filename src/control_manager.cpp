@@ -4,6 +4,9 @@
 
 ControlManager::ControlManager() {
     ctrl_cmd_ = std::make_shared<node_cmd>(MAX_CTRL_CMD_STACK_SIZE);
+
+    trq_lpf_.set_param_lpf(1000.0, 100.0, 0.7);
+    vel_lpf_.set_param_lpf(1000.0, 100.0, 0.7);
 }
 
 ControlManager::~ControlManager() {
@@ -89,8 +92,8 @@ void ControlManager::cmd_executor() {
     if (ctrl_cmd_->cmd_stack_.size() != 0) {
         cmd = ctrl_cmd_->cmd_stack_.pop();
 
-        M5_LOGI("ControlManager::cmd_executor: cmd_type: %d",
-                cmd.cmd_code.cmd_type);
+        // M5_LOGI("ControlManager::cmd_executor: cmd_type: %d",
+        //         cmd.cmd_code.cmd_type);
 
         switch (cmd.cmd_code.cmd_type) {
             case basic_m5stack_cmd_list::CHANGE_CONTROLLED_SRV_ID:
@@ -180,19 +183,17 @@ bool ControlManager::recv_can() {
             motor_status[can_id].can_id = can_id;
         }
 
-        // M5_LOGI("ControlManager::recv_can: CAN ID: %d", can_id);
-        // M5_LOGI("ControlManager::recv_can: CMD: %d", msg_cmd);
-        // M5_LOGI("0xFE: %d", rx_msg.identifier & 0x000000FF);
         //  　ここで、受信データの詳細解析を行う
         switch (msg_cmd) {
             case CMD_GET_ID:
                 if (!motor_status_->is_connected) {
                     if (((rx_msg.identifier & 0x000000FF) == 0xFE) &&
                         can_id == state_.waiting_servo_id) {
-                        M5_LOGI(
-                            "ControlManager::check_connecting_servo: Connected "
-                            "(%d)",
-                            can_id);
+                        // M5_LOGI(
+                        //     "ControlManager::check_connecting_servo:
+                        //     Connected "
+                        //     "(%d)",
+                        //     can_id);
                         motor_status_->is_connected = true;
                         motor_status_->serial_id =
                             (uint64_t)rx_msg.data[7] << 56 |
@@ -205,19 +206,20 @@ bool ControlManager::recv_can() {
                             (uint64_t)rx_msg.data[0];
                         return true;
                     } else {
-                        M5_LOGI(
-                            "ControlManager::check_connecting_servo: Not "
-                            "Connected "
-                            "(%d)",
-                            can_id);
+                        // M5_LOGI(
+                        //     "ControlManager::check_connecting_servo: Not "
+                        //     "Connected "
+                        //     "(%d)",
+                        //     can_id);
                         motor_status_->is_connected = false;
                         return false;
                     }
                 }
-                M5_LOGI(
-                    "ControlManager::check_connecting_servo: Already Connected "
-                    "(%d)",
-                    can_id);
+                // M5_LOGI(
+                //     "ControlManager::check_connecting_servo: Already
+                //     Connected "
+                //     "(%d)",
+                //     can_id);
                 break;
             case CMD_RESPONSE_MOTION_STATE:
                 // RAW
@@ -247,9 +249,12 @@ bool ControlManager::recv_can() {
                 motor_status_->master_id = (rx_msg.identifier & 0x000000FF);
 
                 state_.timestamp = motor_status_->timestamp;
+                state_.prev_joint_position = state_.act_joint_position;
                 state_.act_joint_position = motor_status_->act_position;
-                state_.act_joint_velocity = motor_status_->act_velocity;
-                state_.act_joint_torque = motor_status_->act_effort;
+                state_.act_joint_velocity =
+                    vel_lpf_.update(motor_status_->act_velocity);
+                state_.act_joint_torque =
+                    trq_lpf_.update(motor_status_->act_effort);
 
                 if (!state_.is_init_joint_pos) {
                     state_.is_init_joint_pos = true;
@@ -284,9 +289,9 @@ void ControlManager::stop_motor(uint8_t can_id) {
 
 void ControlManager::stay_motor(uint8_t can_id) {
     twai_message_t msg;
-    cybergear_driver.set_position_mode(can_id, msg);
-    send_can_packet_task(msg);
-    recv_can();
+    // cybergear_driver.set_position_mode(can_id, msg);
+    // send_can_packet_task(msg);
+    // recv_can();
 
     cybergear_driver.set_position_ref(can_id, state_.act_joint_position_0, msg);
     send_can_packet_task(msg);
@@ -345,6 +350,9 @@ void ControlManager::torque_control(uint8_t can_id, double target_torque) {
     double gain_pos_p = 10.0;
     double gain_vel_p = 2.0;
     double gain_vel_i = 0.021;
+
+    double err_trq = 0.0;
+    double diff_pos = 0.0;
 
     double v_cmd = 0.0;
 
@@ -417,10 +425,10 @@ void ControlManager::torque_control(uint8_t can_id, double target_torque) {
     }
     */
     // << SAFETY
-    state_.sum_error_torque += target_torque - state_.act_joint_torque;
+    err_trq = target_torque - state_.act_joint_torque;
+    state_.sum_error_torque += err_trq;
 
-    cmd_value = (target_torque - state_.act_joint_torque) * 2.0 +
-                0.01 * state_.sum_error_torque;
+    cmd_value = 2.0 * err_trq + 0.01 * state_.sum_error_torque;
 
     if (cmd_value < MIN_THRESHOLD_JOINT_CURRENT) {
         cmd_value = MIN_THRESHOLD_JOINT_CURRENT;
@@ -428,13 +436,6 @@ void ControlManager::torque_control(uint8_t can_id, double target_torque) {
         cmd_value = MAX_THRESHOLD_JOINT_CURRENT;
     }
 
-    /*
-    M5_LOGI(
-        "ControlManager::torque_control: cmd_value: %f, \t target_value: "
-        "%f"
-        ", \t is over pos : %d, \t is over vel : %d",
-        cmd_value, target_torque, is_over_position, is_over_velocity);
-    */
     twai_message_t msg;
     cybergear_driver.set_iq_ref(can_id, cmd_value, msg);
     send_can_packet_task(msg);
@@ -470,11 +471,12 @@ void ControlManager::set_controlled_servo_id(uint8_t servo_id) {
 
         set_servo_ctrl_mode(servo_id, basic_servo_ctrl_cmd_list::STAY);
 
-        M5_LOGI("ControlManager::set_controlled_servo_id: Connected (%d)",
-                servo_id);
+        // M5_LOGI("ControlManager::set_controlled_servo_id: Connected (%d)",
+        //         servo_id);
     } else {
-        M5_LOGI("ControlManager::set_controlled_servo_id: Not Connected (%d)",
-                servo_id);
+        // M5_LOGI("ControlManager::set_controlled_servo_id: Not Connected
+        // (%d)",
+        //         servo_id);
     }
     // SET
     state_.servo_id = servo_id;
@@ -489,8 +491,9 @@ void ControlManager::change_controlled_servo_id(uint8_t servo_id) {
     if (state_.act_can_connection_status) {
         stop_motor(state_.servo_id);
         motor_status[state_.servo_id].is_connected = false;
-        M5_LOGI("ControlManager::change_controlled_servo_id: Disconnected (%d)",
-                state_.servo_id);
+        // M5_LOGI("ControlManager::change_controlled_servo_id: Disconnected
+        // (%d)",
+        //         state_.servo_id);
     }
     // SET
     state_.waiting_servo_id = servo_id;
@@ -551,11 +554,13 @@ void ControlManager::set_servo_power(uint8_t servo_id, bool is_power_on) {
 void ControlManager::set_servo_ctrl_mode(uint8_t servo_id,
                                          basic_servo_ctrl_cmd_list ctrl_mode) {
     twai_message_t msg;
-    if (state_.act_can_connection_status)  // CAN Connected
+    if (state_.act_can_connection_status &&
+        ctrl_mode != state_.ctrl_mode)  // CAN Connected
     {
         switch (ctrl_mode) {
             case basic_servo_ctrl_cmd_list::STAY:
                 // 位置指令のリセット
+                state_.act_joint_position_0 = state_.act_joint_position;
                 state_.cmd_joint_position = state_.act_joint_position;
                 position_control(servo_id, state_.act_joint_position);
                 // 速度制限の設定

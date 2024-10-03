@@ -9,6 +9,7 @@
 //
 #include "Device/circular_buffer.hpp"
 #include "Device/xiaomi_cybergear_driver.hpp"
+#include "Service/biquad_filter.hpp"
 #include "driver/twai.h"
 //
 #include "control_parameter.hpp"
@@ -29,6 +30,10 @@ struct control_status
 
 class ControlManager {
 private:
+    // Module
+    BiquadFilter trq_lpf_;
+    BiquadFilter vel_lpf_;
+
     // Data
     control_status status_;
     ControlState state_;
@@ -59,6 +64,11 @@ private:
     void velocity_control(uint8_t can_id, double target_velocity);
     void torque_control(uint8_t can_id, double target_torque);
     // << END CAN
+
+    // >> For Control
+    bool is_boosting_trq = false;
+    int32_t boosting_cnt = 0;
+    int32_t boosting_max_cnt = 1000;
 
     // Sensor class
     UNIT_SCALES scale;
