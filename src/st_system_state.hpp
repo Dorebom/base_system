@@ -20,12 +20,16 @@ struct SystemState
     bool is_logging;
     bool is_init_ctrl_task;
     bool is_init_lan;
+    bool is_init_scale;
+    bool dummmy[7];
     signed short int encoder_button_value;
     unsigned short int udp_recv_num;
     unsigned short int udp_send_num;
     signed short int dummy2[1];
     basic_m5stack_cmd_list act_cmd_type;
-    unsigned int dummy3;
+    float sensor_weight;
+    int32_t sensor_weight_raw_adc;
+    int32_t dummy3;
 
     SystemState() {
         init();
@@ -48,6 +52,11 @@ struct SystemState
         udp_recv_num = 0;
         udp_send_num = 0;
         act_cmd_type = basic_m5stack_cmd_list::NONE;
-        dummy3 = 255;
+
+        is_init_scale = false;
+        sensor_weight = 0.0;
+        sensor_weight_raw_adc = 0;
+
+        dummy3 = 0xFFFF;
     }
 };

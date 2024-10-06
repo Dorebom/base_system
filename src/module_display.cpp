@@ -213,15 +213,15 @@ void ModuleDisplay::normal_display(manual_operating_state* manop_state_,
         if (ctrl_state_->is_init_scale) {
             canvas_->setTextSize(TEXT_FONT_SIZE_SMALL);
             canvas_->printf("Weight: %f, \t Raw ADC: %d\r\n",
-                            ctrl_state_->sensor_weight,
-                            ctrl_state_->sensor_weight_raw_adc);
+                            system_state_->sensor_weight,
+                            system_state_->sensor_weight_raw_adc);
         } else {
             // canvas->setTextSize(TEXT_FONT_SIZE_SMALL);
             // canvas->printf("Weight: Not Init, \t Raw ADC: Not Init\r\n");
             canvas_->setTextSize(TEXT_FONT_SIZE_SMALL);
             canvas_->printf("Weight: %f, \t Raw ADC: %d\r\n",
-                            ctrl_state_->sensor_weight,
-                            ctrl_state_->sensor_weight_raw_adc);
+                            system_state_->sensor_weight,
+                            system_state_->sensor_weight_raw_adc);
         }
 
         canvas_->setTextSize(TEXT_FONT_SIZE_SMALL);

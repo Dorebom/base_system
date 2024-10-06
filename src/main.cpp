@@ -120,6 +120,12 @@ static void main_task(void *arg) {
     uint32_t display_time_interval = 250;          // ms
     uint32_t udp_heart_beat_time_interval = 1000;  // ms
     uint32_t reset_time_interval = 10000;          // ms
+
+    // >> 1.1.1 Initialize weight sensor module
+    float weight = 0.0f;
+    int32_t raw_adc = 0;
+    M5_LOGW(" exist_weight_scale: %d", exist_weight_scale);
+
     // >> 1.2. Caluculation time Data
     // Timer
     unsigned long start, end;
@@ -181,6 +187,12 @@ static void main_task(void *arg) {
             ctrl_manager.set_emergency_stop(true);
         }
         sys_manager.update_encoder_button(sys_manager.check_force_stop());
+
+        // >> 1.1. Get Weight and Raw ADC
+        if (exist_weight_scale) {
+            weight = sys_manager.get_weight();
+            raw_adc = sys_manager.get_weightRawADC();
+        }
 
         sys_manager.update_manual_operating();
 
@@ -253,11 +265,6 @@ static void ctrl_task(void *arg) {
      */
     uint32_t reset_time_interval = 5000;  // ms
 
-    // >> 1.1. Initialize weight sensor module
-    float weight = 0.0f;
-    int32_t raw_adc = 0;
-    M5_LOGW(" exist_weight_scale: %d", exist_weight_scale);
-
     // >> 1.2. Caluculation time Data
     portTickType xLastWakeTime;
 
@@ -287,11 +294,6 @@ static void ctrl_task(void *arg) {
         /* ------------------------- */
 
         // 1. Get State
-        // >> 1.1. Get Weight and Raw ADC
-        if (exist_weight_scale) {
-            weight = ctrl_manager.get_weight();
-            raw_adc = ctrl_manager.get_weightRawADC();
-        }
         ctrl_manager.set_state_machine(sys_manager.check_state_machine());
 
         ctrl_manager.cmd_executor();
@@ -376,7 +378,7 @@ void setup(void) {
                M5DEV.Ex_I2C.getSCL());
 
     exist_weight_scale =
-        ctrl_manager.begin_scale(Wire, UNIT_SCALES_DEFAULT_ADDR);
+        sys_manager.begin_scale(Wire, UNIT_SCALES_DEFAULT_ADDR);
     sys_manager.begin_encoder_button(&Wire, UNIT_ENCODER_DEFAULT_ADDR);
     M5_LOGI("IO initialized");
     // <--END 4. Initialize I2C

@@ -31,6 +31,7 @@
 #include "Common/st_udp_frame.hpp"
 //
 #include "DataStruct/st_manual_operating.hpp"
+#include "Sensor/unit_scales.hpp"
 #include "module_display.hpp"
 #include "module_manual_operation.hpp"
 #include "module_system_cmd_register.hpp"
@@ -53,6 +54,9 @@ private:
     // Mutex
     // std::mutex mtx_comm_udp_;
 
+    // Sensor class
+    UNIT_SCALES scale;
+
 public:
     // >> display
     void set_canvas(M5Canvas* canvas_) {
@@ -74,6 +78,14 @@ public:
     bool check_encoder_button_flag() {
         return system_state_->encoder_button_flag;
     }
+
+    // >> SENSOR >> weight scale
+    bool begin_scale(TwoWire& wire, uint8_t addr);
+    void reset_scale();
+    float get_weight();
+    int32_t get_weightRawADC();
+    // << END SENSOR
+
     // << END Module
 
     /*

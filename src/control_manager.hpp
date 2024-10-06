@@ -5,7 +5,7 @@
 #include <memory>
 
 #include "Common/node_cmd.hpp"
-#include "Sensor/unit_scales.hpp"
+// #include "Sensor/unit_scales.hpp"
 //
 #include "Device/circular_buffer.hpp"
 #include "Device/xiaomi_cybergear_driver.hpp"
@@ -71,7 +71,7 @@ private:
     int32_t boosting_max_cnt = 1000;
 
     // Sensor class
-    UNIT_SCALES scale;
+    // UNIT_SCALES scale;
 
     // FUNCTIONS
     // >> Servo Config
@@ -103,10 +103,10 @@ public:
     void init_servo_dummy();
 
     // >> SENSOR >> weight scale
-    bool begin_scale(TwoWire& wire, uint8_t addr);
-    void reset_scale();
-    float get_weight();
-    int32_t get_weightRawADC();
+    // bool begin_scale(TwoWire& wire, uint8_t addr);
+    // void reset_scale();
+    // float get_weight();
+    // int32_t get_weightRawADC();
     // << END SENSOR
 
     // >> SENSOR >> CAN
