@@ -428,13 +428,22 @@ void ControlManager::torque_control(uint8_t can_id, double target_torque) {
     err_trq = target_torque - state_.act_joint_torque;
     state_.sum_error_torque += err_trq;
 
-    cmd_value = 2.0 * err_trq + 0.01 * state_.sum_error_torque;
+    // cmd_value = 2.0 * err_trq + 0.01 * state_.sum_error_torque;
+    cmd_value = 1.0 * target_torque;
+
+    if (abs(cmd_value) > 0.01) {
+        state_.torque_coeff = abs(state_.act_joint_torque / cmd_value);
+    } else {
+        state_.torque_coeff = 0.0;
+    }
 
     if (cmd_value < MIN_THRESHOLD_JOINT_CURRENT) {
         cmd_value = MIN_THRESHOLD_JOINT_CURRENT;
     } else if (cmd_value > MAX_THRESHOLD_JOINT_CURRENT) {
         cmd_value = MAX_THRESHOLD_JOINT_CURRENT;
     }
+
+    state_.cmd_joint_current = cmd_value;
 
     twai_message_t msg;
     cybergear_driver.set_iq_ref(can_id, cmd_value, msg);

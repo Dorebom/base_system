@@ -319,7 +319,9 @@ void ModuleDisplay::normal_display(manual_operating_state* manop_state_,
             canvas_->printf("CmdJ Pos: %.3f \t Vel: %.2f \t Trq: %.3f \r\n",
                             ctrl_state_->cmd_joint_position,
                             ctrl_state_->cmd_joint_velocity,
-                            ctrl_state_->cmd_joint_torque);
+                            ctrl_state_->cmd_joint_current);
+            // ctrl_state_->cmd_joint_torque);
+            canvas_->printf("TrqCoef: %.3f \r\n", ctrl_state_->torque_coeff);
         }
     }
 

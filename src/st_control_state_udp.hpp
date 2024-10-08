@@ -18,6 +18,8 @@ struct ControlStateUdp
     float cmd_joint_position;
     float cmd_joint_velocity;
     float cmd_joint_torque;
+    float cmd_joint_current;
+    float dummy2;
 
     ControlStateUdp() {
         init();
@@ -36,6 +38,7 @@ struct ControlStateUdp
         cmd_joint_position = 0.0;
         cmd_joint_velocity = 0.0;
         cmd_joint_torque = 0.0;
+        cmd_joint_current = 0.0;
     }
 
     void compressed_copy(ControlState& state) {
@@ -49,5 +52,6 @@ struct ControlStateUdp
         cmd_joint_position = state.cmd_joint_position;
         cmd_joint_velocity = state.cmd_joint_velocity;
         cmd_joint_torque = state.cmd_joint_torque;
+        cmd_joint_current = state.cmd_joint_current;
     }
 };

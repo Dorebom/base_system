@@ -21,6 +21,7 @@ struct ControlState
     double cmd_joint_position;
     double cmd_joint_velocity;
     double cmd_joint_torque;
+    double cmd_joint_current;
 
     double act_joint_position_0;
     double act_joint_velocity_0;
@@ -31,6 +32,7 @@ struct ControlState
     double sum_error_torque;
 
     double prev_joint_position;
+    double torque_coeff;
 
     // servo info
 
@@ -66,12 +68,14 @@ struct ControlState
         cmd_joint_position = 0.0;
         cmd_joint_velocity = 0.0;
         cmd_joint_torque = 0.0;
+        cmd_joint_current = 0.0;
 
         act_joint_position_0 = 0.0;
         act_joint_velocity_0 = 0.0;
         act_joint_torque_0 = 0.0;
 
         sum_error_vel = 0.0;
+        torque_coeff = 0.0;
 
         dummy2 = 0x2525;
     }
@@ -97,11 +101,14 @@ struct ControlState
         cmd_joint_position = state.cmd_joint_position;
         cmd_joint_velocity = state.cmd_joint_velocity;
         cmd_joint_torque = state.cmd_joint_torque;
+        cmd_joint_current = state.cmd_joint_current;
 
         act_joint_position_0 = state.act_joint_position_0;
         act_joint_velocity_0 = state.act_joint_velocity_0;
         act_joint_torque_0 = state.act_joint_torque_0;
 
         sum_error_vel = state.sum_error_vel;
+
+        torque_coeff = state.torque_coeff;
     }
 };
