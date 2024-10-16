@@ -9,6 +9,7 @@ class circular_stacker {
 public:
     circular_stacker(size_t size) : size_(size), buffer_(size) {
         head_ = tail_ = count_ = 0;
+        is_overwrite_ = false;
     }
 
     ~circular_stacker() {
@@ -18,13 +19,25 @@ public:
     // 要素を追加
     void push(const T& value) {
         std::lock_guard<std::mutex> lock(mtx_);
-        if (count_ < size_) {
+
+        if (is_overwrite_) {
             buffer_[tail_] = value;
             tail_ = (tail_ + 1) % size_;
-            count_++;
+            if (count_ < size_) {
+                count_++;
+            } else {
+                head_ = (head_ + 1) % size_;
+            }
         } else {
-            std::cerr << "Circular stacker is full. Cannot push more elements."
-                      << std::endl;
+            if (count_ < size_) {
+                buffer_[tail_] = value;
+                tail_ = (tail_ + 1) % size_;
+                count_++;
+            } else {
+                std::cerr
+                    << "Circular stacker is full. Cannot push more elements."
+                    << std::endl;
+            }
         }
     }
 
@@ -59,6 +72,10 @@ public:
         head_ = tail_ = count_ = 0;
     }
 
+    void change_overwrite_mode(bool is_overwrite) {
+        is_overwrite_ = is_overwrite;
+    }
+
 private:
     size_t size_;
     std::vector<T> buffer_;
@@ -66,4 +83,5 @@ private:
     size_t tail_;
     size_t count_;
     std::mutex mtx_;
+    bool is_overwrite_;
 };

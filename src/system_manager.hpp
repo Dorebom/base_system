@@ -104,6 +104,8 @@ private:
     //  >> Stack
     std::shared_ptr<node_cmd> node_cmd_;
     std::shared_ptr<node_cmd> ctrl_cmd_;
+
+    std::shared_ptr<node_state_stack> control_state_stack_;
     // >> Flag
     bool is_init_main_task = false;
     bool prev_emergency_stop_switch_for_control_task = false;
@@ -162,6 +164,7 @@ public:
     }
     // >> Control Task
     void set_control_state(ControlState& state);
+    void set_control_state(st_node_state& state);
     void set_control_cmd(std::shared_ptr<node_cmd> cmd) {
         ctrl_cmd_ = cmd;
     }
@@ -221,5 +224,8 @@ public:
 
     bool check_connected_udp() {
         return system_state_->is_connected_udp;
+    }
+    bool check_streaming_state_for_logging() {
+        return is_streaming_state_for_logging;
     }
 };

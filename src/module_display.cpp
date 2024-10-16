@@ -47,8 +47,8 @@ void ModuleDisplay::update(manual_operating_state* manop_state_,
         normal_display(manop_state_, ctrl_state_, system_state_,
                        system_state_code);
     } else {
-        small_display(manop_state_, ctrl_state_, system_state_,
-                      system_state_code);
+        // small_display(manop_state_, ctrl_state_, system_state_,
+        //               system_state_code);
     }
 
     prev_is_logging = system_state_->is_logging;
@@ -455,15 +455,15 @@ void ModuleDisplay::small_display(manual_operating_state* manop_state_,
 
     if (manop_state_->act_phase == manual_operating_phase::MODE_CHANGE &&
         display_blink_cnt % 5 == 0) {
-        canvas_->printf("--:%s|SM:%s|Ct:%s|Ave:%dms|Max:%dms\r\n",
-                        str_op.c_str(), str_sm.c_str(), str_ctrl_mode.c_str(),
+        canvas_->printf("--:%s|SM:%s|Ct:%s|M:%dms|C:%dus\r\n", str_op.c_str(),
+                        str_sm.c_str(), str_ctrl_mode.c_str(),
                         system_state_->ave_calc_time_of_main_task,
-                        system_state_->max_calc_time_of_main_task);
+                        system_state_->ave_calc_time_of_ctrl_task);
     } else {
-        canvas_->printf("Op:%s|SM:%s|Ct:%s|Ave:%dms|Max:%dms\r\n",
-                        str_op.c_str(), str_sm.c_str(), str_ctrl_mode.c_str(),
+        canvas_->printf("Op:%s|SM:%s|Ct:%s|M:%dms|C:%dus\r\n", str_op.c_str(),
+                        str_sm.c_str(), str_ctrl_mode.c_str(),
                         system_state_->ave_calc_time_of_main_task,
-                        system_state_->max_calc_time_of_main_task);
+                        system_state_->ave_calc_time_of_ctrl_task);
     }
     if (ctrl_state_->is_init_joint_pos ||
         ctrl_state_->act_can_connection_status) {

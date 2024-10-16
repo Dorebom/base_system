@@ -77,6 +77,8 @@ void ControlManager::update() {
             state_.act_joint_torque +=
                 0.05 * (state_.cmd_joint_torque - state_.act_joint_torque);
         }
+
+        state_.timestamp = micros();
     }
 }
 

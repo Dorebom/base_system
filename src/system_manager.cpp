@@ -7,6 +7,10 @@
 SystemManager::SystemManager() {
     node_cmd_ = std::make_shared<node_cmd>(MAX_NODE_CMD_STACK_SIZE);
 
+    control_state_stack_ =
+        std::make_shared<node_state_stack>(20);  // TODO: node class への移植
+    control_state_stack_->state_stack_.change_overwrite_mode(true);
+
     udp_send_packet_.fixed_state_header_data_size = sizeof(common_state_code);
     udp_send_packet_.fixed_cmd_header_data_size = sizeof(common_cmd_code);
 
@@ -72,7 +76,6 @@ void SystemManager::set_udp_send_state(st_node_state* state) {
 
     if (stack_marker_size >
         udp_send_packet_.max_stack_marker_size - udp_send_packet_.stack_num) {
-        M5_LOGW("(STATE)Stack Marker Size Over %d", stack_marker_size);
         is_unsent_data = true;
         memcpy(unsent_data, state, stack_data_size);
         unsent_stack_marker = stack_marker_size;
@@ -142,6 +145,7 @@ void SystemManager::reset_udp_send_packet(bool discard_unsent_data) {
         udp_send_packet_.stack_num += std::abs(unsent_stack_marker);
         udp_send_packet_.stack_marker_num++;
         is_unsent_data = false;
+        M5_LOGI("Unsent Data Sent");
     }
 }
 
@@ -326,10 +330,18 @@ void SystemManager::set_control_state(ControlState& state) {
     control_state_->deepcopy(state);
     // Note:
     // ディスプレイ表示やUDP通信への影響は、状態マシンをReady状態にするかどうかで防ぐ。
+    /*
     if (is_streaming_state_for_logging) {
+        control_state_stack_->state_stack_.push(state);
+
         control_state_udp_->compressed_copy(state);
         set_udp_send_state(&control_state_udp_data);
     }
+    */
+}
+
+void SystemManager::set_control_state(st_node_state& state) {
+    control_state_stack_->state_stack_.push(state);
 }
 
 void SystemManager::set_udp_recv_packet(uint8_t* packetBuffer) {
@@ -351,12 +363,24 @@ int SystemManager::get_udp_send_packet(uint8_t* packetBuffer) {
         if (!is_streaming_state_for_logging) {
             // ロギング時は圧縮データを送信するため、送信しない
             set_udp_send_state(&control_state_data);
+        } else {
+            auto state_stack_size = control_state_stack_->state_stack_.size();
+
+            for (int i = 0; i < state_stack_size; i++) {
+                auto temp_state_data = control_state_stack_->state_stack_.pop();
+                control_state_udp_->compressed_copy(
+                    *(ControlState*)temp_state_data.data);
+                set_udp_send_state(&control_state_udp_data);
+            }
+            // M5_LOGI("Last Stack Size: %d",
+            //         control_state_stack_->state_stack_.size());
         }
     } else if (is_requested_state_at_once) {
         // set_udp_send_state(&system_state_data);
         set_udp_send_state(&control_state_data);
         is_requested_state_at_once = false;
     }
+
     if (udp_send_packet_.stack_marker_num > 0) {
         // deep copy
         int packet_size =

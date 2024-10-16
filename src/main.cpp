@@ -31,16 +31,16 @@ enum class BoardType : int
 BoardType board_type = BoardType::M5STACK_CORES3;
 
 // thread priority
-#define MAIN_SYSTEM_TASK_PRIORITY 10  // 3
+#define MAIN_SYSTEM_TASK_PRIORITY 12  // 3
 #define UDP_RECV_TASK_PRIORITY    10  // 1
 #define CTRL_TASK_PRIORITY        20  // 2
 
 #define CTRL_TASK_TIME_INTERVAL     1
-#define MAIN_TASK_TIME_INTERVAL     10
+#define MAIN_TASK_TIME_INTERVAL     15
 #define UDP_RECV_TASK_TIME_INTERVAL 50
 
 #define MAIN_STACK_DEPTH     8192
-#define CTRL_STACK_DEPTH     4096
+#define CTRL_STACK_DEPTH     8192  // 4096
 #define UDP_RECV_STACK_DEPTH 4096
 
 // M5Stack PIN CoreS3
@@ -119,7 +119,7 @@ static void main_task(void *arg) {
     // >> 1.1. Initialize the task thread
     uint32_t display_time_interval = 250;          // ms
     uint32_t udp_heart_beat_time_interval = 1000;  // ms
-    uint32_t reset_time_interval = 10000;          // ms
+    uint32_t reset_time_interval = 5000;           // ms
 
     // >> 1.1.1 Initialize weight sensor module
     float weight = 0.0f;
@@ -129,7 +129,6 @@ static void main_task(void *arg) {
     // >> 1.2. Caluculation time Data
     // Timer
     unsigned long start, end;
-    unsigned long start_debug, end_debug;
     unsigned long start_reset, end_reset;
     start = millis();              // 計測開始時間
     end = millis();                // 計測終了時間
@@ -167,6 +166,10 @@ static void main_task(void *arg) {
     sys_manager.set_state_machine_ready();
 
     start_reset = millis();
+
+    portTickType xLastWakeTime;
+    xLastWakeTime = xTaskGetTickCount();
+
     /*
      * 2. MAIN LOOP
      */
@@ -206,7 +209,6 @@ static void main_task(void *arg) {
         }
 
         // 3. UDP Send
-        start_debug = millis();
         if (sys_manager.check_connected_udp()) {
             auto send_packet_size =
                 sys_manager.get_udp_send_packet(send_packet_buffer);
@@ -218,7 +220,6 @@ static void main_task(void *arg) {
         } else {
             // TODO: Heart Beat for UDP
         }
-        end_debug = millis();
 
         /* ------------------------- */
         end = millis();  // 計測終了時間
@@ -244,17 +245,10 @@ static void main_task(void *arg) {
             time_cnt = 0;
             max_calc_time_of_main_task = (uint32_t)elapsed;
         }
-        elapsed = end_debug - start_debug;
-        if (elapsed > max_calc_time_of_send_task) {
-            max_calc_time_of_send_task = (uint32_t)elapsed;
-        }
-        ave_calc_time_of_send_task =
-            ave_calc_time_of_send_task * 0.9 + (uint32_t)elapsed * 0.1;
-        sys_manager.set_calc_time_of_udp_send_task(ave_calc_time_of_send_task,
-                                                   max_calc_time_of_send_task);
 
         // >> END 処理時間の更新
-        vTaskDelay(pdMS_TO_TICKS(MAIN_TASK_TIME_INTERVAL));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(MAIN_TASK_TIME_INTERVAL));
+        // vTaskDelay(pdMS_TO_TICKS(MAIN_TASK_TIME_INTERVAL - elapsed));
     }
     vTaskDelete(NULL);
 }
@@ -282,12 +276,17 @@ static void ctrl_task(void *arg) {
     auto elapsed = end - start;  // 処理に要した時間をミリ秒に変換
 
     ControlState state;
+    st_node_state node_state_;
+    ControlState *state_ptr_;
+    state_ptr_ = (ControlState *)node_state_.data;
 
     ctrl_manager.init_servo_dummy();
 
     sys_manager.set_initialized_ctrl_task();
 
     xLastWakeTime = xTaskGetTickCount();
+
+    uint32_t cnt = 0;
 
     while (1) {
         start = micros();  // 計測開始時間
@@ -304,6 +303,12 @@ static void ctrl_task(void *arg) {
         //  6. Set Control State
         //  control state: CtrlManager -> SystemManager
         ctrl_manager.get_control_state(state);
+        if (sys_manager.check_streaming_state_for_logging()) {
+            if (cnt % 2 == 0) {
+                state_ptr_->deepcopy(state);
+                sys_manager.set_control_state(node_state_);
+            }
+        }
         sys_manager.set_control_state(state);
         /* ------------------------- */
         end = micros();  // 計測開始時間
@@ -324,7 +329,7 @@ static void ctrl_task(void *arg) {
         sys_manager.set_calc_time_of_ctrl_task(ave_calc_time_of_ctrl_task,
                                                max_calc_time_of_ctrl_task);
         // >> END 処理時間の更新
-
+        cnt++;
         // 2000 us - elapsed
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(CTRL_TASK_TIME_INTERVAL));
         // vTaskDelay(pdMS_TO_TICKS(CTRL_TASK_TIME_INTERVAL));
@@ -468,14 +473,22 @@ void setup(void) {
 
     // 7. Initialize THREAD
     // Make thread for receiving UDP packet
-    xTaskCreate(udp_receive_task, "UDP_RECV_TASK", UDP_RECV_STACK_DEPTH, NULL,
-                UDP_RECV_TASK_PRIORITY, NULL);
-    // Make thread for main task
-    xTaskCreate(main_task, "MAIN_TASK", MAIN_STACK_DEPTH, NULL,
-                MAIN_SYSTEM_TASK_PRIORITY, NULL);
-    // Make thread for control task
-    xTaskCreate(ctrl_task, "CTRL_TASK", CTRL_STACK_DEPTH, NULL,
-                CTRL_TASK_PRIORITY, NULL);
+    xTaskCreateUniversal(udp_receive_task, "UDP_RECV_TASK",
+                         UDP_RECV_STACK_DEPTH, NULL, UDP_RECV_TASK_PRIORITY,
+                         NULL, 0);
+    // xTaskCreate(udp_receive_task, "UDP_RECV_TASK", UDP_RECV_STACK_DEPTH,
+    // NULL,
+    //             UDP_RECV_TASK_PRIORITY, NULL);
+    //  Make thread for main task
+    xTaskCreateUniversal(main_task, "MAIN_TASK", MAIN_STACK_DEPTH, NULL,
+                         MAIN_SYSTEM_TASK_PRIORITY, NULL, 0);
+    // xTaskCreate(main_task, "MAIN_TASK", MAIN_STACK_DEPTH, NULL,
+    //             MAIN_SYSTEM_TASK_PRIORITY, NULL);
+    //  Make thread for control task
+    xTaskCreateUniversal(ctrl_task, "CTRL_TASK", CTRL_STACK_DEPTH, NULL,
+                         CTRL_TASK_PRIORITY, NULL, 1);
+    //    xTaskCreate(ctrl_task, "CTRL_TASK", CTRL_STACK_DEPTH, NULL,
+    //            CTRL_TASK_PRIORITY, NULL);
     //
     // M5DEV_LOGI("Thread initialized");
     // <--END 7. Initialize THREAD
